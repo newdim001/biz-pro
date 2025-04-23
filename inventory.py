@@ -12,7 +12,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 def initialize_cash_balances():
     """Initialize default cash balances if they don't exist"""
     business_units = ["Unit A", "Unit B"]
-    default_balance = 10000.0
+    default_balance = 1.0
     
     try:
         for unit in business_units:
