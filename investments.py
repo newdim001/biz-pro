@@ -15,7 +15,7 @@ def initialize_cash_balances():
     This ensures that every business unit has a starting balance.
     """
     business_units = ["Unit A", "Unit B"]
-    default_balance = 10000.0  # Default initial balance
+    default_balance = 1.0  # Default initial balance
     
     for unit in business_units:
         response = supabase.table("cash_balances").select("*").eq("business_unit", unit).execute()
