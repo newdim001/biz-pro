@@ -51,10 +51,10 @@ def fetch_cash_balance():
     try:
         response = supabase.table('cash_balances').select('*').execute()
         data = response.data
-        return {item['unit']: item['balance'] for item in data} if data else {'Unit A': 40000000.0, 'Unit B': 10000.0}
+        return {item['unit']: item['balance'] for item in data} if data else {'Unit A': 1.0, 'Unit B': 1.0}
     except Exception as e:
         logging.error(f"Error fetching cash balance: {str(e)}")
-        return {'Unit A': 40000000.0, 'Unit B': 10000.0}
+        return {'Unit A': 1.0, 'Unit B': 1.0}
 
 
 def fetch_price_history():
