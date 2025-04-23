@@ -33,8 +33,8 @@ def fetch_cash_balance(business_unit):
         balance = float(response.data[0]["balance"])  # Ensure numeric type
         print(f"Fetched balance for {business_unit}: {balance}")  # Log the balance
         return balance
-    print(f"No balance found for {business_unit}, returning default: 10000.0")
-    return 10000.0  # Default initial balance if no record exists
+    print(f"No balance found for {business_unit}, returning default: 1.0")
+    return 1.0  # Default initial balance if no record exists
 
 def update_cash_balance(amount, business_unit, action):
     """
