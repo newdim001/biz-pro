@@ -67,7 +67,7 @@ def fetch_cash_balance(business_unit):
     response = supabase.table("cash_balances").select("balance").eq("business_unit", business_unit).execute()
     if response.data:
         return response.data[0]["balance"]
-    return 10000.0  # Default initial balance if no record exists
+    return 1.0  # Default initial balance if no record exists
 
 def fetch_partner_profits(unit):
     """Fetch partner profits for a given business unit"""
