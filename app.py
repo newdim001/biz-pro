@@ -203,8 +203,8 @@ def initialize_default_data() -> None:
         cash_response = supabase.table("cash_balances").select("*").execute()
         if not cash_response.data:
             default_cash_balances = [
-                {"business_unit": "Unit A", "balance": 40000000.0},
-                {"business_unit": "Unit B", "balance": 10000.0}
+                {"business_unit": "Unit A", "balance": 1.0},
+                {"business_unit": "Unit B", "balance": 1.0}
             ]
             supabase.table("cash_balances").insert(default_cash_balances).execute()
             
