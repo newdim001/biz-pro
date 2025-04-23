@@ -42,10 +42,10 @@ def fetch_cash_balance(business_unit: str) -> float:
         
         if response.data:
             return float(response.data[0]["balance"])
-        return 10000.0  # Default balance if not found
+        return 1.0  # Default balance if not found
     except Exception as e:
         st.error(f"Failed to fetch balance: {str(e)}")
-        return 10000.0
+        return 1.0
 
 def update_cash_balance(amount: float, business_unit: str, action: str) -> bool:
     """Update cash balance after validating sufficient funds"""
