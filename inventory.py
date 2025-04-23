@@ -12,7 +12,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 def initialize_cash_balances():
     """Initialize default cash balances if they don't exist"""
     business_units = ["Unit A", "Unit B"]
-    default_balance = 1.0
+    default_balance = 10000.0
     
     try:
         for unit in business_units:
@@ -42,10 +42,10 @@ def fetch_cash_balance(business_unit: str) -> float:
         
         if response.data:
             return float(response.data[0]["balance"])
-        return 1.0  # Default balance if not found
+        return 10000.0  # Default balance if not found
     except Exception as e:
         st.error(f"Failed to fetch balance: {str(e)}")
-        return 1.0
+        return 10000.0
 
 def update_cash_balance(amount: float, business_unit: str, action: str) -> bool:
     """Update cash balance after validating sufficient funds"""

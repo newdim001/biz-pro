@@ -15,7 +15,7 @@ def initialize_cash_balances():
     This ensures that every business unit has a starting balance.
     """
     business_units = ["Unit A", "Unit B"]
-    default_balance = 1.0  # Default initial balance
+    default_balance = 10000.0  # Default initial balance
     
     for unit in business_units:
         response = supabase.table("cash_balances").select("*").eq("business_unit", unit).execute()
@@ -33,8 +33,8 @@ def fetch_cash_balance(business_unit):
         balance = float(response.data[0]["balance"])  # Ensure numeric type
         print(f"Fetched balance for {business_unit}: {balance}")  # Log the balance
         return balance
-    print(f"No balance found for {business_unit}, returning default: 1.0")
-    return 1.0  # Default initial balance if no record exists
+    print(f"No balance found for {business_unit}, returning default: 10000.0")
+    return 10000.0  # Default initial balance if no record exists
 
 def update_cash_balance(amount, business_unit, action):
     """

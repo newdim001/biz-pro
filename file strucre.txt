@@ -1,0 +1,23 @@
+bizmaster_pro/
+│
+├── app.py                     # Main entry point of the application
+├── bizmaster_users.db         # SQLite database file for user data
+│
+├── components/                # Modularized components for different features
+│   ├── __init__.py            # Initialization script for the components folder
+│   ├── auth.py                # Authentication-related functions (e.g., login, logout)
+│   ├── dashboard.py           # Dashboard functionality
+│   ├── expenses.py            # Expenses management module
+│   ├── inventory.py           # Inventory management module
+│   ├── investments.py         # Investments management module
+│   ├── partnership.py         # Partnership management module
+│   ├── reports.py             # Reports generation module
+│   ├── styles.py              # CSS styles and UI customization
+│   ├── user_management.py     # User management functionality
+│
+├── data/                      # Data-related utilities
+│   ├── __init__.py            # Initialization script for the data folder
+│   ├── session_state.py       # Session state management
+│   ├── utils.py               # General utility functions
+│
+└── README.md                  # Documentation for the project
