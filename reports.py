@@ -46,8 +46,19 @@ def fetch_partnerships(business_unit=None):
 def calculate_inventory_value(unit):
     """Calculate inventory value for a specific unit"""
     inventory_data = fetch_inventory(unit)
-    total_stock = inventory_data['quantity_kg'].sum() if not inventory_data.empty else 0.0
-    total_value = (inventory_data['quantity_kg'] * inventory_data['unit_price']).sum() if not inventory_data.empty else 0.0
+    
+    # Separate purchases and sales
+    purchases = inventory_data[inventory_data['transaction_type'] == 'Purchase'] if not inventory_data.empty else pd.DataFrame(columns=inventory_data.columns)
+    sales = inventory_data[inventory_data['transaction_type'] == 'Sale'] if not inventory_data.empty else pd.DataFrame(columns=inventory_data.columns)
+    
+    # Calculate net stock (purchases - sales)
+    total_stock = (purchases['quantity_kg'].sum() if not purchases.empty else 0.0) - \
+                  (sales['quantity_kg'].sum() if not sales.empty else 0.0)
+    
+    # Calculate total inventory value
+    total_value = ((purchases['quantity_kg'] * purchases['unit_price']).sum() if not purchases.empty else 0.0) - \
+                  ((sales['quantity_kg'] * sales['unit_price']).sum() if not sales.empty else 0.0)
+    
     return total_stock, total_value
 
 # Calculate profit/loss
@@ -214,6 +225,7 @@ def show_inventory_report(units):
                 inventory = fetch_inventory(unit)
                 st.write(f"### {unit} Inventory")
                 current_stock, current_value = calculate_inventory_value(unit)
+            
             if not inventory.empty:
                 # Current status
                 cols = st.columns(2)
