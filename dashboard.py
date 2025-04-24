@@ -109,13 +109,17 @@ def get_system_summary():
     expenses = fetch_expenses()
     
     # Separate purchases and sales
-    purchases = inventory[inventory['transaction_type'] == 'Purchase']
-    sales = inventory[inventory['transaction_type'] == 'Sale']
+    purchases = inventory[inventory['transaction_type'] == 'Purchase'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
+    sales = inventory[inventory['transaction_type'] == 'Sale'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
+    
+    total_stock = (purchases['quantity_kg'].sum() if not purchases.empty else 0.0) - (sales['quantity_kg'].sum() if not sales.empty else 0.0)
+    total_inventory_value = ((purchases['quantity_kg'] * purchases['unit_price']).sum() if not purchases.empty else 0.0) - \
+                            ((sales['quantity_kg'] * sales['unit_price']).sum() if not sales.empty else 0.0)
     
     return {
         "Total Cash": sum(cash_balances.values()) if cash_balances else 0.0,
-        "Total Inventory Value": (purchases['quantity_kg'] * purchases['unit_price']).sum() - (sales['quantity_kg'] * sales['unit_price']).sum(),
-        "Total Stock": purchases['quantity_kg'].sum() - sales['quantity_kg'].sum(),
+        "Total Inventory Value": total_inventory_value,
+        "Total Stock": total_stock,
         "Total Expenses": expenses['amount'].sum() if not expenses.empty else 0.0
     }
 
@@ -126,13 +130,17 @@ def get_business_unit_summary(unit):
     expenses = fetch_expenses(unit)
     
     # Separate purchases and sales
-    purchases = inventory[inventory['transaction_type'] == 'Purchase']
-    sales = inventory[inventory['transaction_type'] == 'Sale']
+    purchases = inventory[inventory['transaction_type'] == 'Purchase'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
+    sales = inventory[inventory['transaction_type'] == 'Sale'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
+    
+    total_stock = (purchases['quantity_kg'].sum() if not purchases.empty else 0.0) - (sales['quantity_kg'].sum() if not sales.empty else 0.0)
+    total_inventory_value = ((purchases['quantity_kg'] * purchases['unit_price']).sum() if not purchases.empty else 0.0) - \
+                            ((sales['quantity_kg'] * sales['unit_price']).sum() if not sales.empty else 0.0)
     
     return {
         "Cash Balance": cash_balance,
-        "Inventory Quantity": purchases['quantity_kg'].sum() - sales['quantity_kg'].sum(),
-        "Inventory Value": (purchases['quantity_kg'] * purchases['unit_price']).sum() - (sales['quantity_kg'] * sales['unit_price']).sum(),
+        "Inventory Quantity": total_stock,
+        "Inventory Value": total_inventory_value,
         "Operating Expenses": expenses['amount'].sum() if not expenses.empty else 0.0
     }
 
