@@ -1,5 +1,4 @@
 import streamlit as st
-from datetime import datetime
 from supabase import create_client
 
 # Initialize Supabase client
@@ -20,20 +19,11 @@ def initialize_cash_balances():
                              .execute()
             
             if not response.data:
-                # Insert initial balance without last_updated if column doesn't exist
-                data = {
+                # Insert initial balance
+                supabase.table("cash_balances").insert({
                     "business_unit": unit,
                     "balance": default_balance
-                }
-                
-                # Only add last_updated if we know the column exists
-                try:
-                    supabase.table("cash_balances").insert({
-                        **data,
-                        "last_updated": datetime.now().isoformat()
-                    }).execute()
-                except:
-                    supabase.table("cash_balances").insert(data).execute()
+                }).execute()
                     
     except Exception as e:
         st.error(f"Balance initialization error: {str(e)}")
@@ -54,7 +44,10 @@ def fetch_cash_balance(business_unit: str) -> float:
         return 10000.0
 
 def update_cash_balance(amount: float, business_unit: str, action: str) -> bool:
-    """Safe cash balance update that works with or without last_updated column"""
+    """
+    Update cash balance after validating sufficient funds
+    Simplified version without last_updated column dependency
+    """
     try:
         current_balance = fetch_cash_balance(business_unit)
         
@@ -66,22 +59,12 @@ def update_cash_balance(amount: float, business_unit: str, action: str) -> bool:
         else:  # 'add'
             new_balance = current_balance + amount
         
-        # Try with last_updated first, fall back to basic update if it fails
-        try:
-            supabase.table("cash_balances").upsert({
-                "business_unit": business_unit,
-                "balance": new_balance,
-                "last_updated": datetime.now().isoformat()
-            }).execute()
-        except Exception as e:
-            if "last_updated" in str(e):
-                supabase.table("cash_balances").upsert({
-                    "business_unit": business_unit,
-                    "balance": new_balance
-                }).execute()
-            else:
-                raise e
-                
+        # Simple upsert without last_updated
+        supabase.table("cash_balances").upsert({
+            "business_unit": business_unit,
+            "balance": new_balance
+        }).execute()
+        
         return True
     except Exception as e:
         st.error(f"Failed to update balance: {str(e)}")
