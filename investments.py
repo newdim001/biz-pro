@@ -54,22 +54,26 @@ def update_cash_balance(amount, business_unit, action):
     if action == 'subtract':
         if current_balance < amount:
             print(f"Insufficient balance: {current_balance} < {amount}")
+            st.error(f"Insufficient funds in {business_unit}")
             return False  # Insufficient balance
         new_balance = current_balance - amount
     elif action == 'add':
         new_balance = current_balance + amount
-    
-    # Update or insert the new balance in Supabase
-    response = supabase.table("cash_balances").select("*").eq("business_unit", business_unit).execute()
-    if response.data:
-        # Update existing record
-        supabase.table("cash_balances").update({"balance": new_balance}).eq("business_unit", business_unit).execute()
     else:
-        # Insert new record
-        supabase.table("cash_balances").insert({"business_unit": business_unit, "balance": new_balance}).execute()
+        st.error("Invalid action. Use 'add' or 'subtract'.")
+        return False
     
-    print(f"Updated balance for {business_unit}: {new_balance}")
-    return True
+    # Update or insert the new balance in Supabase using upsert
+    try:
+        supabase.table("cash_balances").upsert({
+            "business_unit": business_unit,
+            "balance": new_balance
+        }, on_conflict="business_unit").execute()
+        print(f"Updated balance for {business_unit}: {new_balance}")
+        return True
+    except Exception as e:
+        st.error(f"Failed to update cash balance: {str(e)}")
+        return False
 
 def fetch_investments():
     """Fetch all investments from Supabase"""
