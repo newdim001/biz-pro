@@ -61,11 +61,10 @@ def update_cash_balance(amount: float, business_unit: str, action: str) -> bool:
             new_balance = current_balance + amount
         
         # Update balance with last_updated timestamp
-        supabase.table("cash_balances").upsert({
-            "business_unit": business_unit,
+        supabase.table("cash_balances").update({
             "balance": new_balance,
             "last_updated": datetime.now().isoformat()
-        }, on_conflict="business_unit").execute()  # Resolve conflict on business_unit
+        }).eq("business_unit", business_unit).execute()  # Update based on business_unit
         
         return True
     except Exception as e:
