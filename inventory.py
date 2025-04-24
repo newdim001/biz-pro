@@ -1,88 +1,63 @@
 import streamlit as st
 import pandas as pd
-from datetime import date, datetime
-from supabase import create_client
-from components.auth import has_permission
+from datetime import date
+from utils import fetch_cash_balance, update_cash_balance  # Import centralized cash balance functions
 
-# Initialize Supabase client
-SUPABASE_URL = "https://umtgkoogrtvyqcrzygoe.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtdGdrb29ncnR2eXFjcnp5Z29lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxMzYyNDYsImV4cCI6MjA2MDcxMjI0Nn0.QMrKSOa91fzE7sNWBfhePhRFG05YMwNbvHYK8Fzkjpk"
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-def initialize_cash_balances():
-    """Initialize default cash balances if they don't exist"""
-    business_units = ["Unit A", "Unit B"]
-    default_balance = 10000.0
-    
-    try:
-        for unit in business_units:
-            # Check if balance exists
-            response = supabase.table("cash_balances")\
-                             .select("*")\
-                             .eq("business_unit", unit)\
-                             .execute()
+def show_transaction_form(transaction_type: str, business_unit: str):
+    """Show form for purchase/sale transactions."""
+    with st.form(f"{transaction_type}_form_{business_unit}", clear_on_submit=True):
+        st.subheader(f"New {transaction_type} - {business_unit}")
+        
+        cols = st.columns(2)
+        with cols[0]:
+            date_transaction = st.date_input("Date", value=date.today())
+            quantity_kg = st.number_input(
+                "Quantity (kg)", 
+                min_value=0.001, 
+                step=0.001, 
+                format="%.3f"
+            )
+        with cols[1]:
+            unit_price = st.number_input(
+                "Price per kg (AED)", 
+                min_value=0.01, 
+                step=0.01
+            )
+            remarks = st.text_input(
+                "Supplier" if transaction_type == "Purchase" else "Customer",
+                max_chars=100
+            )
+        
+        total_amount = quantity_kg * unit_price
+        st.write(f"Total Amount: AED {total_amount:,.2f}")
+        
+        if st.form_submit_button(f"Record {transaction_type}"):
+            # Validate inputs
+            if quantity_kg <= 0 or unit_price <= 0:
+                st.error("Quantity and price must be positive values")
+                return
             
-            if not response.data:
-                # Insert initial balance
-                supabase.table("cash_balances").insert({
-                    "business_unit": unit,
-                    "balance": default_balance,
-                    "last_updated": datetime.now().isoformat()
-                }).execute()
-    except Exception as e:
-        st.error(f"Balance initialization error: {str(e)}")
-
-def fetch_cash_balance(business_unit: str) -> float:
-    """Get current cash balance for a business unit"""
-    try:
-        response = supabase.table("cash_balances")\
-                         .select("balance")\
-                         .eq("business_unit", business_unit)\
-                         .execute()
-        
-        if response.data:
-            return float(response.data[0]["balance"])
-        return 10000.0  # Default balance if not found
-    except Exception as e:
-        st.error(f"Failed to fetch balance: {str(e)}")
-        return 10000.0
-
-def update_cash_balance(amount: float, business_unit: str, action: str) -> bool:
-    """Update cash balance after validating sufficient funds"""
-    try:
-        current_balance = fetch_cash_balance(business_unit)
-        
-        if action == 'subtract':
-            if current_balance < amount:
-                st.error(f"Insufficient funds in {business_unit}")
-                return False
-            new_balance = current_balance - amount
-        else:  # 'add'
-            new_balance = current_balance + amount
-        
-        # Update balance using upsert with conflict resolution
-        response = supabase.table("cash_balances").upsert({
-            "business_unit": business_unit,
-            "balance": new_balance,
-            "last_updated": datetime.now().isoformat()
-        }, on_conflict="business_unit").execute()
-        
-        return True if response else False
-    except Exception as e:
-        st.error(f"Failed to update balance: {str(e)}")
-        return False
-
-def fetch_inventory(business_unit: str = None) -> pd.DataFrame:
-    """Get inventory data for a specific unit or all units"""
-    try:
-        query = supabase.table("inventory").select("*")
-        if business_unit:
-            query = query.eq("business_unit", business_unit)
-        response = query.execute()
-        return pd.DataFrame(response.data) if response.data else pd.DataFrame()
-    except Exception as e:
-        st.error(f"Failed to load inventory: {str(e)}")
-        return pd.DataFrame()
+            # Handle cash balance for purchases
+            if transaction_type == "Purchase":
+                if not update_cash_balance(total_amount, business_unit, 'subtract'):
+                    st.error(f"Insufficient funds in {business_unit}")
+                    return
+            
+            # Handle cash balance for sales
+            elif transaction_type == "Sale":
+                update_cash_balance(total_amount, business_unit, 'add')
+            
+            # Record the transaction in the database
+            if add_inventory_record(
+                transaction_type=transaction_type,
+                business_unit=business_unit,
+                date_transaction=date_transaction,
+                quantity_kg=quantity_kg,
+                unit_price=unit_price,
+                remarks=remarks
+            ):
+                st.success(f"{transaction_type} recorded successfully!")
+                st.rerun()
 
 def add_inventory_record(
     transaction_type: str,
@@ -92,7 +67,7 @@ def add_inventory_record(
     unit_price: float,
     remarks: str
 ) -> bool:
-    """Add a new inventory transaction"""
+    """Add a new inventory transaction to Supabase."""
     try:
         total_amount = quantity_kg * unit_price
         response = supabase.table("inventory").insert({
@@ -109,61 +84,12 @@ def add_inventory_record(
         st.error(f"Failed to record transaction: {str(e)}")
         return False
 
-def show_transaction_form(transaction_type: str, business_unit: str):
-    """Show form for purchase/sale transactions"""
-    with st.form(f"{transaction_type}_form_{business_unit}", clear_on_submit=True):
-        st.subheader(f"New {transaction_type} - {business_unit}")
-        
-        cols = st.columns(2)
-        with cols[0]:
-            date_transaction = st.date_input("Date", value=date.today())
-            quantity_kg = st.number_input("Quantity (kg)", 
-                                         min_value=0.001, 
-                                         step=0.001, 
-                                         format="%.3f")
-        with cols[1]:
-            unit_price = st.number_input("Price per kg (AED)", 
-                                       min_value=0.01, 
-                                       step=0.01)
-            remarks = st.text_input("Supplier" if transaction_type == "Purchase" else "Customer",
-                                  max_chars=100)
-        
-        total_amount = quantity_kg * unit_price
-        st.write(f"Total Amount: AED {total_amount:,.2f}")
-        
-        if st.form_submit_button(f"Record {transaction_type}"):
-            # Validate inputs
-            if quantity_kg <= 0 or unit_price <= 0:
-                st.error("Quantity and price must be positive values")
-                return
-            
-            # Handle cash balance for purchases
-            if transaction_type == "Purchase":
-                if not update_cash_balance(total_amount, business_unit, 'subtract'):
-                    return
-            
-            # Handle cash balance for sales
-            elif transaction_type == "Sale":
-                update_cash_balance(total_amount, business_unit, 'add')
-            
-            # Record the transaction
-            if add_inventory_record(
-                transaction_type=transaction_type,
-                business_unit=business_unit,
-                date_transaction=date_transaction,
-                quantity_kg=quantity_kg,
-                unit_price=unit_price,
-                remarks=remarks
-            ):
-                st.success(f"{transaction_type} recorded successfully!")
-                st.rerun()
-
 def show_inventory():
-    """Main inventory management interface"""
+    """Main inventory management interface."""
     try:
         # Authentication check
         if 'user' not in st.session_state:
-            st.error("Please login to access inventory")
+            st.error("Please log in to access inventory")
             return
             
         user = st.session_state.user
