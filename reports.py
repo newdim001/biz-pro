@@ -32,7 +32,7 @@ def fetch_expenses(business_unit=None):
     response = query.execute()
     return pd.DataFrame(response.data) if response.data else pd.DataFrame()
 
-# Calculate inventory value
+# Calculate inventory value (CORRECTED VERSION)
 def calculate_inventory_value(unit):
     """Calculate inventory value for a specific unit"""
     inventory_data = fetch_inventory(unit)
@@ -47,19 +47,57 @@ def calculate_inventory_value(unit):
     total_stock = (purchases['quantity_kg'].sum() if not purchases.empty else 0.0) - \
                   (sales['quantity_kg'].sum() if not sales.empty else 0.0)
     
-    # Fetch current market price (assuming it's stored in session state)
-    current_market_price = st.session_state.get('current_price', 50.0)  # Default to 50.0 if not set
+    # Calculate weighted average purchase price for valuation
+    if not purchases.empty:
+        total_purchase_amount = purchases['total_amount'].sum()
+        total_purchase_quantity = purchases['quantity_kg'].sum()
+        avg_purchase_price = total_purchase_amount / total_purchase_quantity
+    else:
+        avg_purchase_price = 0
     
     # Calculate total inventory value
-    current_value = total_stock * current_market_price
+    current_value = total_stock * avg_purchase_price
     
     return round(total_stock, 2), round(current_value, 2)
+
+# Calculate profit/loss
+def calculate_profit_loss(unit):
+    """Calculate profit/loss for a business unit"""
+    inventory_data = fetch_inventory(unit)
+    if inventory_data.empty:
+        return 0.0, 0.0
+    
+    purchases = inventory_data[inventory_data['transaction_type'] == 'Purchase']
+    sales = inventory_data[inventory_data['transaction_type'] == 'Sale']
+    
+    # Calculate gross profit (sales revenue - cost of goods sold)
+    if not sales.empty:
+        total_sales_amount = sales['total_amount'].sum()
+        total_sales_quantity = sales['quantity_kg'].sum()
+        
+        if not purchases.empty:
+            total_purchase_amount = purchases['total_amount'].sum()
+            total_purchase_quantity = purchases['quantity_kg'].sum()
+            avg_purchase_price = total_purchase_amount / total_purchase_quantity
+            cost_of_goods_sold = total_sales_quantity * avg_purchase_price
+            gross_profit = total_sales_amount - cost_of_goods_sold
+        else:
+            gross_profit = total_sales_amount
+    else:
+        gross_profit = 0.0
+    
+    # Calculate net profit (gross profit - expenses)
+    expenses_data = fetch_expenses(unit)
+    total_expenses = expenses_data['amount'].sum() if not expenses_data.empty else 0.0
+    net_profit = gross_profit - total_expenses
+    
+    return round(gross_profit, 2), round(net_profit, 2)
 
 # Show reports
 def show_reports():
     """Business reporting dashboard"""
     user = st.session_state.get('user')
-    if not user or not has_permission(user, 'reports'):  # Check user permissions
+    if not user or not has_permission(user, 'reports'):
         st.error("Permission denied")
         return
     
@@ -164,7 +202,7 @@ def show_financial_report(units):
     except Exception as e:
         st.error(f"Could not generate profit chart: {str(e)}")
 
-# Inventory analysis report
+# Inventory analysis report (CORRECTED VERSION)
 def show_inventory_report(units):
     """Inventory analysis report"""
     st.subheader("📦 Inventory Analysis")
@@ -201,14 +239,20 @@ def show_inventory_report(units):
                     use_container_width=True
                 )
                 
-                # Inventory movement chart
+                # Correct inventory movement chart
                 try:
-                    inventory['Cumulative'] = inventory['quantity_kg'].cumsum()
+                    # Create a proper cumulative sum that accounts for purchases (+) and sales (-)
+                    inventory['signed_quantity'] = inventory.apply(
+                        lambda row: row['quantity_kg'] if row['transaction_type'] == 'Purchase' else -row['quantity_kg'],
+                        axis=1
+                    )
+                    inventory['cumulative_stock'] = inventory['signed_quantity'].cumsum()
+                    
                     fig = px.line(
                         inventory.sort_values('date'),
-                        x='date', y='Cumulative',
+                        x='date', y='cumulative_stock',
                         title=f"Inventory Movement - {unit}",
-                        labels={'Cumulative': 'Quantity (kg)'}
+                        labels={'cumulative_stock': 'Quantity (kg)'}
                     )
                     st.plotly_chart(fig, use_container_width=True)
                 except Exception as e:
@@ -228,13 +272,11 @@ def show_partner_report(units):
                 st.write("### Combined Partners")
                 data = calculate_combined_partner_profits()
                 if not data.empty:
-                    # Select only the required columns
                     data = data[['business_unit', 'partner_name', 'share', 'withdrawn', 'Total_Entitlement', 'Available_Now']]
             else:
                 st.write(f"### {unit} Partners")
                 data = calculate_partner_profits(unit)
                 if not data.empty:
-                    # Select only the required columns
                     data = data[['business_unit', 'partner_name', 'share', 'withdrawn', 'Total_Entitlement', 'Available_Now']]
             
             if not data.empty:
