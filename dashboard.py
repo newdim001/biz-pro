@@ -94,7 +94,7 @@ def update_cash_balance(amount, business_unit, action):
         response = supabase.table("cash_balances").upsert({
             "business_unit": business_unit,
             "balance": new_balance
-        }).execute()
+        }, on_conflict="business_unit").execute()
         
         return True if response else False
     except Exception as e:
