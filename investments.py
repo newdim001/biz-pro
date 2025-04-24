@@ -2,13 +2,74 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 from supabase import create_client
-from components.auth import has_permission
-from components.cash_management import initialize_cash_balances, fetch_cash_balance, update_cash_balance
+from components.auth import has_permission  # Import the has_permission function
 
 # Initialize Supabase client
 SUPABASE_URL = "https://umtgkoogrtvyqcrzygoe.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtdGdrb29ncnR2eXFjcnp5Z29lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxMzYyNDYsImV4cCI6MjA2MDcxMjI0Nn0.QMrKSOa91fzE7sNWBfhePhRFG05YMwNbvHYK8Fzkjpk"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def initialize_cash_balances():
+    """
+    Initialize the cash_balances table with default balances for business units.
+    This ensures that every business unit has a starting balance.
+    """
+    business_units = ["Unit A", "Unit B"]
+    default_balance = 10000.0  # Default initial balance
+    
+    for unit in business_units:
+        response = supabase.table("cash_balances").select("*").eq("business_unit", unit).execute()
+        if not response.data:  # If no record exists for the business unit
+            print(f"Initializing cash balance for {unit} with default: {default_balance}")
+            supabase.table("cash_balances").insert({
+                "business_unit": unit,
+                "balance": default_balance
+            }).execute()
+
+def fetch_cash_balance(business_unit):
+    """Fetch the current cash balance for a business unit from Supabase"""
+    response = supabase.table("cash_balances").select("balance").eq("business_unit", business_unit).execute()
+    if response.data:
+        balance = float(response.data[0]["balance"])  # Ensure numeric type
+        print(f"Fetched balance for {business_unit}: {balance}")  # Log the balance
+        return balance
+    print(f"No balance found for {business_unit}, returning default: 10000.0")
+    return 10000.0  # Default initial balance if no record exists
+
+def update_cash_balance(amount, business_unit, action):
+    """
+    Updates the cash balance for a business unit in Supabase.
+    
+    Parameters:
+        amount (float): The amount to add/subtract.
+        business_unit (str): The business unit ('Unit A', 'Unit B', etc.).
+        action (str): 'add' or 'subtract'.
+    
+    Returns:
+        bool: True if the update was successful, False otherwise.
+    """
+    current_balance = fetch_cash_balance(business_unit)
+    print(f"Current balance for {business_unit}: {current_balance}")
+    
+    if action == 'subtract':
+        if current_balance < amount:
+            print(f"Insufficient balance: {current_balance} < {amount}")
+            return False  # Insufficient balance
+        new_balance = current_balance - amount
+    elif action == 'add':
+        new_balance = current_balance + amount
+    
+    # Update or insert the new balance in Supabase
+    response = supabase.table("cash_balances").select("*").eq("business_unit", business_unit).execute()
+    if response.data:
+        # Update existing record
+        supabase.table("cash_balances").update({"balance": new_balance}).eq("business_unit", business_unit).execute()
+    else:
+        # Insert new record
+        supabase.table("cash_balances").insert({"business_unit": business_unit, "balance": new_balance}).execute()
+    
+    print(f"Updated balance for {business_unit}: {new_balance}")
+    return True
 
 def fetch_investments():
     """Fetch all investments from Supabase"""
@@ -46,7 +107,7 @@ def add_investment(unit, inv_date, amount, investor, description):
 def show_investments():
     """Complete investment management interface"""
     user = st.session_state.get('user')
-    if not user or not has_permission(user, 'investments'):
+    if not user or not has_permission(user, 'investments'):  # Check user permissions
         st.error("Permission denied")
         return
     
@@ -56,6 +117,7 @@ def show_investments():
     # Fetch existing investments from Supabase
     investments_data = fetch_investments()
     
+    # Ensure 'business_unit' column exists
     if 'business_unit' not in investments_data.columns:
         st.error("Critical error: 'business_unit' column is missing from the investments table.")
         return
@@ -97,6 +159,7 @@ def show_investments():
                     elif amount <= 0:
                         st.error("Investment amount must be greater than zero")
                     else:
+                        # Add new investment to Supabase
                         success = add_investment(
                             unit=unit,
                             inv_date=inv_date,
@@ -116,6 +179,7 @@ def show_investments():
                     st.session_state.investments['business_unit'] == unit
                 ]
                 
+                # Filter to display only the required columns
                 unit_inv = unit_inv[["business_unit", "inv_date", "amount", "investor", "description"]]
                 
                 if not unit_inv.empty:
