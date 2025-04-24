@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 from supabase import create_client
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
+from typing import Dict, Union
 
 # Initialize Supabase client with error handling
 try:
@@ -13,21 +14,29 @@ except Exception as e:
     st.error(f"Failed to initialize Supabase client: {str(e)}")
     st.stop()
 
-# Default data structures
+# Standardized column names (all lowercase with underscores)
 DEFAULT_INVENTORY_COLS = [
-    'Date', 'Transaction Type', 'Quantity_kg', 
-    'Unit Price', 'Total Amount', 'Remarks', 'Business Unit'
+    'date', 'transaction_type', 'quantity_kg', 
+    'unit_price', 'total_amount', 'remarks', 'business_unit'
 ]
 DEFAULT_INVESTMENTS_COLS = [
-    'Date', 'Amount', 'Investor', 'Remarks', 'Business Unit'
+    'date', 'amount', 'investor', 'remarks', 'business_unit'
 ]
 DEFAULT_EXPENSES_COLS = [
-    'Date', 'Category', 'Amount', 'Description', 'Business Unit', 'Partner'
+    'date', 'category', 'amount', 'description', 'business_unit', 'partner'
 ]
-DEFAULT_PARTNERSHIP_COLS = ['Partner', 'Share', 'Withdrawn']
+DEFAULT_PARTNERSHIP_COLS = ['partner', 'share', 'withdrawn', 'invested']
 
-def initialize_default_data(business_units=['Unit A', 'Unit B']):
-    """Initialize default data in Supabase tables"""
+def safe_convert(df: pd.DataFrame, column: str, dtype: type = float) -> pd.Series:
+    """Safely convert DataFrame column to specified type."""
+    try:
+        return pd.to_numeric(df[column], errors='coerce').fillna(0).astype(dtype)
+    except Exception as e:
+        st.error(f"Failed to convert {column}: {str(e)}")
+        return pd.Series([0] * len(df), False
+
+def initialize_default_data(business_units: list = ['Unit A', 'Unit B']) -> None:
+    """Initialize default data in Supabase tables with type safety."""
     try:
         # Initialize cash balances if empty
         cash_response = supabase.table("cash_balances").select("*").execute()
@@ -38,126 +47,127 @@ def initialize_default_data(business_units=['Unit A', 'Unit B']):
                     "balance": 0.0
                 }).execute()
         
-        # Initialize other tables with empty DataFrames if they don't exist
-        tables = {
-            "inventory": DEFAULT_INVENTORY_COLS,
-            "investments": DEFAULT_INVESTMENTS_COLS,
-            "expenses": DEFAULT_EXPENSES_COLS,
-            "partnerships": DEFAULT_PARTNERSHIP_COLS + ['business_unit']
-        }
-        
-        for table, cols in tables.items():
-            response = supabase.table(table).select("*").limit(1).execute()
-            if not response.data:
-                # Table exists but is empty - no need to initialize structure
-                pass
+        # Initialize default partners if none exist
+        partners_response = supabase.table("partnerships").select("*").execute()
+        if not partners_response.data:
+            default_partners = [
+                {"business_unit": "Unit A", "partner": "Ahmed", "share": 60.0, "withdrawn": 0.0, "invested": 0.0},
+                {"business_unit": "Unit A", "partner": "Fatima", "share": 40.0, "withdrawn": 0.0, "invested": 0.0},
+                {"business_unit": "Unit B", "partner": "Ali", "share": 50.0, "withdrawn": 0.0, "invested": 0.0},
+                {"business_unit": "Unit B", "partner": "Mariam", "share": 50.0, "withdrawn": 0.0, "invested": 0.0}
+            ]
+            supabase.table("partnerships").insert(default_partners).execute()
                 
     except Exception as e:
         st.error(f"Error initializing default data: {str(e)}")
 
-def initialize_session_state():
-    """Initialize or refresh session state from Supabase"""
+def refresh_all_data() -> None:
+    """Force refresh all session state data from Supabase."""
     try:
-        if 'initialized' not in st.session_state:
-            st.session_state.initialized = False
-            
-        # Initialize with loading indicator
-        with st.spinner("Loading application data..."):
-            # Fetch all data in parallel where possible
-            inventory_response = supabase.table("inventory").select("*").execute()
-            cash_balance_response = supabase.table("cash_balances").select("*").execute()
-            investments_response = supabase.table("investments").select("*").execute()
-            expenses_response = supabase.table("expenses").select("*").execute()
-            partnerships_response = supabase.table("partnerships").select("*").execute()
-            
-            # Process inventory data
-            st.session_state.inventory = pd.DataFrame(
-                inventory_response.data if inventory_response.data else [],
+        with st.spinner("Refreshing all data..."):
+            # Fetch all data in parallel
+            inventory = supabase.table("inventory").select("*").execute()
+            cash_balances = supabase.table("cash_balances").select("*").execute()
+            investments = supabase.table("investments").select("*").execute()
+            expenses = supabase.table("expenses").select("*").execute()
+            partnerships = supabase.table("partnerships").select("*").execute()
+
+            # Process inventory with type conversion
+            inventory_df = pd.DataFrame(
+                inventory.data if inventory.data else [],
                 columns=DEFAULT_INVENTORY_COLS
             )
-            
+            inventory_df['quantity_kg'] = safe_convert(inventory_df, 'quantity_kg')
+            inventory_df['unit_price'] = safe_convert(inventory_df, 'unit_price')
+            inventory_df['total_amount'] = safe_convert(inventory_df, 'total_amount')
+            st.session_state.inventory = inventory_df
+
             # Process cash balances
             st.session_state.cash_balance = {
-                row['business_unit']: row['balance'] 
-                for row in cash_balance_response.data
-            } if cash_balance_response.data else {unit: 0.0 for unit in ['Unit A', 'Unit B']}
-            
-            # Process investments
+                row['business_unit']: float(row['balance'])
+                for row in cash_balances.data
+            } if cash_balances.data else {unit: 0.0 for unit in ['Unit A', 'Unit B']}
+
+            # Process other data with type safety
             st.session_state.investments = pd.DataFrame(
-                investments_response.data if investments_response.data else [],
+                investments.data if investments.data else [],
                 columns=DEFAULT_INVESTMENTS_COLS
             )
-            
-            # Process expenses
             st.session_state.expenses = pd.DataFrame(
-                expenses_response.data if expenses_response.data else [],
+                expenses.data if expenses.data else [],
                 columns=DEFAULT_EXPENSES_COLS
             )
             
-            # Process partnerships
-            if partnerships_response.data:
+            # Process partnerships with numeric conversion
+            if partnerships.data:
+                partners_df = pd.DataFrame(partnerships.data)
+                for col in ['share', 'withdrawn', 'invested']:
+                    partners_df[col] = safe_convert(partners_df, col)
                 st.session_state.partners = {
-                    unit: pd.DataFrame([
-                        p for p in partnerships_response.data 
-                        if p['business_unit'] == unit
-                    ]) for unit in ['Unit A', 'Unit B']
-                }
-            else:
-                st.session_state.partners = {
-                    unit: pd.DataFrame(columns=DEFAULT_PARTNERSHIP_COLS) 
+                    unit: partners_df[partners_df['business_unit'] == unit]
                     for unit in ['Unit A', 'Unit B']
                 }
             
-            # Initialize current price
-            st.session_state.current_price = 0.0
-            
-            # Mark initialization complete
-            st.session_state.initialized = True
             st.session_state.last_updated = datetime.now()
+            st.success("Data refreshed successfully!")
             
     except Exception as e:
-        st.error(f"Failed to initialize session: {str(e)}")
-        st.session_state.initialized = False
+        st.error(f"Refresh failed: {str(e)}")
 
-def update_cash_balance(amount, business_unit, action, description=""):
+def initialize_session_state() -> None:
+    """Initialize or refresh session state with data validation."""
+    if 'initialized' not in st.session_state:
+        st.session_state.initialized = False
+    
+    if not st.session_state.initialized:
+        initialize_default_data()
+        refresh_all_data()
+        st.session_state.initialized = True
+
+def update_cash_balance(
+    amount: float,
+    business_unit: str,
+    action: str,
+    description: str = ""
+) -> tuple[bool, float]:
     """
-    Secure cash balance update with transaction logging
+    Secure cash balance update with transaction logging and type safety.
     
     Args:
-        amount (float): Amount to modify
-        business_unit (str): Target business unit
-        action (str): 'add' or 'subtract'
-        description (str): Optional transaction description
+        amount: Positive number to modify
+        business_unit: 'Unit A' or 'Unit B'
+        action: 'add' or 'subtract'
+        description: Optional transaction note
     
     Returns:
-        tuple: (success: bool, new_balance: float)
+        (success status, new balance)
     """
     try:
         # Validate inputs
-        if not isinstance(amount, (int, float)) or amount <= 0:
-            return False, 0.0
+        amount = float(amount)
+        if amount <= 0:
+            raise ValueError("Amount must be positive")
         if business_unit not in ['Unit A', 'Unit B']:
-            return False, 0.0
+            raise ValueError("Invalid business unit")
         
         # Get current balance
         response = supabase.table("cash_balances")\
                          .select("balance")\
                          .eq("business_unit", business_unit)\
                          .execute()
-        
-        current_balance = response.data[0]['balance'] if response.data else 0.0
+        current_balance = float(response.data[0]['balance']) if response.data else 0.0
         
         # Calculate new balance
         if action == 'subtract':
             if current_balance < amount:
-                return False, current_balance
+                raise ValueError("Insufficient funds")
             new_balance = current_balance - amount
         elif action == 'add':
             new_balance = current_balance + amount
         else:
-            return False, current_balance
+            raise ValueError("Invalid action")
         
-        # Update in database
+        # Update database
         update_response = supabase.table("cash_balances")\
                                 .upsert({
                                     "business_unit": business_unit,
@@ -165,40 +175,36 @@ def update_cash_balance(amount, business_unit, action, description=""):
                                     "last_updated": datetime.now().isoformat()
                                 }).execute()
         
-        if update_response:
-            # Log transaction
-            supabase.table("cash_transactions").insert({
-                "business_unit": business_unit,
-                "amount": amount,
-                "action": action,
-                "description": description,
-                "timestamp": datetime.now().isoformat(),
-                "new_balance": new_balance
-            }).execute()
-            
-            # Update session state
-            st.session_state.cash_balance[business_unit] = new_balance
-            return True, new_balance
+        if not update_response.data:
+            raise RuntimeError("Supabase update failed")
         
-        return False, current_balance
+        # Log transaction
+        supabase.table("cash_transactions").insert({
+            "business_unit": business_unit,
+            "amount": amount,
+            "action": action,
+            "description": description,
+            "timestamp": datetime.now().isoformat(),
+            "new_balance": new_balance
+        }).execute()
+        
+        # Update session state
+        st.session_state.cash_balance[business_unit] = new_balance
+        return True, new_balance
         
     except Exception as e:
-        st.error(f"Cash balance update failed: {str(e)}")
+        st.error(f"Cash update failed: {str(e)}")
         return False, current_balance
 
-def reset_session_state(hard_reset=False):
+def reset_session_state(hard_reset: bool = False) -> None:
     """
-    Reset session state with options
+    Reset session state with optional Supabase data wipe.
     
     Args:
-        hard_reset (bool): If True, clears all data including cached Supabase data
+        hard_reset: If True, clears all Supabase data (dangerous)
     """
     try:
         if hard_reset:
-            # Full reset including Supabase data
-            st.warning("Performing full data reset...")
-            
-            # Get confirmation
             if not st.session_state.get('confirmed_reset', False):
                 st.warning("This will delete ALL data. Type 'CONFIRM RESET' to proceed.")
                 confirmation = st.text_input("Confirmation:")
@@ -207,17 +213,16 @@ def reset_session_state(hard_reset=False):
                     st.rerun()
                 return
             
-            # Reset all tables
+            # Delete all data (except schema)
             tables = ["inventory", "investments", "expenses", "partnerships", "cash_balances"]
             for table in tables:
                 supabase.table(table).delete().neq("id", 0).execute()
             
-            # Reinitialize defaults
             initialize_default_data()
-            st.success("All data has been reset to defaults!")
+            st.success("Database reset complete!")
             time.sleep(2)
         
-        # Clear and reinitialize session
+        # Refresh session
         st.session_state.clear()
         initialize_session_state()
         st.experimental_rerun()
@@ -225,19 +230,31 @@ def reset_session_state(hard_reset=False):
     except Exception as e:
         st.error(f"Reset failed: {str(e)}")
 
+# Auto-refresh logic (run in main app)
+def check_data_freshness() -> None:
+    """Auto-refresh data if stale (>5 minutes old)."""
+    if 'last_updated' not in st.session_state:
+        return
+    
+    if datetime.now() - st.session_state.last_updated > timedelta(minutes=5):
+        refresh_all_data()
+
 # Example usage
 if __name__ == "__main__":
     initialize_session_state()
     
-    # Example UI for testing
-    st.write("Current Cash Balances:", st.session_state.cash_balance)
+    st.title("Session State Manager")
+    st.write("Current Inventory:", st.session_state.inventory)
+    st.write("Cash Balances:", st.session_state.cash_balance)
     
-    if st.button("Refresh Data"):
-        initialize_session_state()
-        st.success("Data refreshed!")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Refresh Data"):
+            refresh_all_data()
+    with col2:
+        if st.button("Soft Reset"):
+            reset_session_state(hard_reset=False)
     
-    if st.button("Soft Reset"):
-        reset_session_state(hard_reset=False)
-    
-    if st.button("Hard Reset (Dangerous)"):
-        reset_session_state(hard_reset=True)
+    if st.checkbox("Show dangerous options"):
+        if st.button("Hard Reset (Wipes ALL Data)", type="primary"):
+            reset_session_state(hard_reset=True)
