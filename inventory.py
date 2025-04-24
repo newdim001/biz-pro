@@ -60,14 +60,14 @@ def update_cash_balance(amount: float, business_unit: str, action: str) -> bool:
         else:  # 'add'
             new_balance = current_balance + amount
         
-        # Update balance with last_updated timestamp
-        supabase.table("cash_balances").upsert({
+        # Update balance using upsert with conflict resolution
+        response = supabase.table("cash_balances").upsert({
             "business_unit": business_unit,
             "balance": new_balance,
             "last_updated": datetime.now().isoformat()
-        }, on_conflict="business_unit").execute()  # Resolve conflict on business_unit
+        }, on_conflict="business_unit").execute()
         
-        return True
+        return True if response else False
     except Exception as e:
         st.error(f"Failed to update balance: {str(e)}")
         return False
@@ -96,11 +96,11 @@ def add_inventory_record(
     try:
         total_amount = quantity_kg * unit_price
         response = supabase.table("inventory").insert({
-            "inv_date": date_transaction.isoformat(),
+            "date": date_transaction.isoformat(),
             "transaction_type": transaction_type,
             "quantity_kg": quantity_kg,
             "unit_price": unit_price,
-            "amount": total_amount,
+            "total_amount": total_amount,
             "remarks": remarks,
             "business_unit": business_unit
         }).execute()
@@ -158,25 +158,6 @@ def show_transaction_form(transaction_type: str, business_unit: str):
                 st.success(f"{transaction_type} recorded successfully!")
                 st.rerun()
 
-def show_inventory_summary(business_unit: str):
-    """Show summary of inventory and cash balance"""
-    inventory_data = fetch_inventory(business_unit)
-    current_balance = fetch_cash_balance(business_unit)
-    cols = st.columns(3)
-    with cols[0]:
-        st.metric("Current Cash Balance", f"AED {current_balance:,.2f}")
-    if not inventory_data.empty:
-        # Calculate inventory metrics
-        purchases = inventory_data[inventory_data['transaction_type'] == 'Purchase']
-        sales = inventory_data[inventory_data['transaction_type'] == 'Sale']
-        total_stock = purchases['quantity_kg'].sum() - sales['quantity_kg'].sum()
-        inventory_value = (purchases['quantity_kg'] * purchases['unit_price']).sum() - \
-                        (sales['quantity_kg'] * sales['unit_price']).sum()
-        with cols[1]:
-            st.metric("Current Stock", f"{total_stock:,.2f} kg")
-        with cols[2]:
-            st.metric("Inventory Value", f"AED {inventory_value:,.2f}")
-
 def show_inventory():
     """Main inventory management interface"""
     try:
@@ -205,9 +186,6 @@ def show_inventory():
         unit_tabs = st.tabs(units)
         for i, unit in enumerate(units):
             with unit_tabs[i]:
-                # Show summary at the top
-                show_inventory_summary(unit)
-                
                 # Purchase/Sale subtabs
                 tab1, tab2 = st.tabs(["Purchase", "Sale"])
                 
@@ -221,29 +199,17 @@ def show_inventory():
                 st.subheader(f"Recent Transactions - {unit}")
                 inventory_data = fetch_inventory(unit)
                 if not inventory_data.empty:
-                    display_data = inventory_data.sort_values('inv_date', ascending=False).head(10).copy()
-                    display_data['inv_date'] = pd.to_datetime(display_data['inv_date']).dt.date
                     st.dataframe(
-                        display_data,
+                        inventory_data.sort_values('date', ascending=False).head(10),
                         column_config={
-                            "inv_date": "Date",
+                            "date": "Date",
                             "transaction_type": "Type",
-                            "quantity_kg": st.column_config.NumberColumn(
-                                "Quantity (kg)",
-                                format="%.3f kg"
-                            ),
-                            "unit_price": st.column_config.NumberColumn(
-                                "Unit Price",
-                                format="AED %.2f"
-                            ),
-                            "amount": st.column_config.NumberColumn(
-                                "Total Amount",
-                                format="AED %.2f"
-                            ),
+                            "quantity_kg": "Quantity (kg)",
+                            "unit_price": "Unit Price (AED)",
+                            "total_amount": "Total Amount (AED)",
                             "remarks": "Details"
                         },
-                        hide_index=True,
-                        use_container_width=True
+                        hide_index=True
                     )
                 else:
                     st.info("No transactions found for this unit")
