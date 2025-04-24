@@ -15,21 +15,19 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-
 def initialize_default_data():
     """Initialize all required session state variables with default values from Supabase."""
     try:
         # Fetch default data from Supabase tables
-        cash_balance = fetch_cash_balance()
+        cash_balance = fetch_cash_balance("Unit A"), fetch_cash_balance("Unit B")
         price_history = fetch_price_history()
         inventory = fetch_inventory()
         expenses = fetch_expenses()
         investments = fetch_investments()
         partners = fetch_partners()
-
         # Initialize session state variables
         defaults = {
-            'cash_balance': cash_balance,
+            'cash_balance': {'Unit A': cash_balance[0], 'Unit B': cash_balance[1]},
             'current_price': 50.0 if not price_history else price_history.iloc[-1]['Price'],
             'price_history': price_history,
             'inventory': inventory,
@@ -45,17 +43,71 @@ def initialize_default_data():
         logging.error(f"Error initializing default data: {str(e)}")
         raise ValueError(f"Error initializing default data: {str(e)}")
 
-
-def fetch_cash_balance():
-    """Fetch cash balance from Supabase."""
+def fetch_cash_balance(business_unit):
+    """
+    Fetch the current cash balance for a specific business unit from Supabase.
+    
+    Args:
+        business_unit (str): The business unit (e.g., "Unit A", "Unit B").
+    
+    Returns:
+        float: The current cash balance.
+    """
     try:
-        response = supabase.table('cash_balances').select('*').execute()
-        data = response.data
-        return {item['unit']: item['balance'] for item in data} if data else {'Unit A': 40000000.0, 'Unit B': 10000.0}
+        response = supabase.table('cash_balances').select("balance").eq("unit", business_unit).execute()
+        if response.data:
+            return float(response.data[0]["balance"])
+        logging.warning(f"No balance found for {business_unit}, returning default: 10000.0")
+        return 10000.0  # Default balance if no record exists
     except Exception as e:
-        logging.error(f"Error fetching cash balance: {str(e)}")
-        return {'Unit A': 40000000.0, 'Unit B': 10000.0}
+        logging.error(f"Failed to fetch cash balance for {business_unit}: {str(e)}")
+        return 10000.0  # Default balance on error
 
+def update_cash_balance(amount, business_unit, operation='add'):
+    """
+    Update the cash balance for a specific business unit in Supabase.
+    
+    Args:
+        amount (float): The amount to add or subtract.
+        business_unit (str): The business unit (e.g., "Unit A", "Unit B").
+        operation (str): The type of operation ("add" or "subtract").
+    
+    Returns:
+        bool: True if the update was successful, False otherwise.
+    """
+    try:
+        amount = float(amount)
+        if amount < 0.0:
+            raise ValueError("Amount cannot be negative")
+        if amount > 0.0 and amount < 0.01:
+            raise ValueError("Amount must be at least 0.01")
+        
+        current_balance = fetch_cash_balance(business_unit)
+        
+        if operation == 'add':
+            new_balance = current_balance + amount
+        elif operation == 'subtract':
+            if current_balance < amount:
+                raise ValueError(f"Insufficient funds in {business_unit}")
+            new_balance = current_balance - amount
+        else:
+            raise ValueError("Invalid operation. Use 'add' or 'subtract'.")
+        
+        # Use upsert to handle unique constraint
+        response = supabase.table('cash_balances').upsert({
+            'unit': business_unit,
+            'balance': new_balance
+        }, on_conflict="unit").execute()
+        
+        if not response.data:
+            logging.error(f"Failed to update cash balance for {business_unit}")
+            return False
+        
+        logging.info(f"Updated {business_unit} cash balance: {operation} {amount}. New balance: {new_balance}")
+        return True
+    except Exception as e:
+        logging.error(f"Error updating cash balance for {business_unit}: {str(e)}")
+        return False
 
 def fetch_price_history():
     """Fetch price history from Supabase."""
@@ -75,7 +127,6 @@ def fetch_price_history():
             'Price': 50.0
         }])
 
-
 def fetch_inventory():
     """Fetch inventory data from Supabase."""
     try:
@@ -91,7 +142,6 @@ def fetch_inventory():
             'Date', 'Transaction Type', 'Quantity_kg', 'Unit Price',
             'Total Amount', 'Business Unit', 'Description'
         ])
-
 
 def fetch_expenses():
     """Fetch expenses data from Supabase."""
@@ -109,7 +159,6 @@ def fetch_expenses():
             'Business Unit', 'Partner', 'Payment Method'
         ])
 
-
 def fetch_investments():
     """Fetch investments data from Supabase."""
     try:
@@ -123,7 +172,6 @@ def fetch_investments():
         return pd.DataFrame(columns=[
             'Date', 'Business Unit', 'Amount', 'Investor', 'Description'
         ])
-
 
 def fetch_partners():
     """Fetch partners data from Supabase."""
@@ -161,7 +209,6 @@ def fetch_partners():
             ])
         }
 
-
 def fetch_transactions():
     """Fetch transactions data from Supabase."""
     try:
@@ -175,7 +222,6 @@ def fetch_transactions():
         return pd.DataFrame(columns=[
             'Date', 'Type', 'Amount', 'From', 'To', 'Description'
         ])
-
 
 def update_market_price(new_price):
     """Update current market price with validation."""
@@ -195,7 +241,6 @@ def update_market_price(new_price):
         logging.error(f"Error updating market price: {str(e)}")
         raise ValueError(f"Error updating market price: {str(e)}")
 
-
 def calculate_inventory_value(unit):
     """Calculate current stock quantity and value."""
     inventory = st.session_state.inventory[
@@ -209,7 +254,6 @@ def calculate_inventory_value(unit):
     current_value = current_stock * st.session_state.current_price
     return round(float(current_stock), 2), round(float(current_value), 2)
 
-
 def calculate_operating_expenses(unit):
     """Calculate total operating expenses (excluding partner transactions)."""
     expenses = st.session_state.expenses[
@@ -220,7 +264,6 @@ def calculate_operating_expenses(unit):
         ]))
     ]
     return round(float(expenses['Amount'].sum()), 2)
-
 
 def calculate_profit_loss(unit):
     """Calculate actual profit from sales."""
@@ -236,7 +279,6 @@ def calculate_profit_loss(unit):
     net_profit = gross_profit - calculate_operating_expenses(unit)
     return round(gross_profit, 2), round(net_profit, 2)
 
-
 def calculate_provisional_profit(unit):
     """
     Calculate potential profit from current inventory.
@@ -246,7 +288,6 @@ def calculate_provisional_profit(unit):
     operating_expenses = calculate_operating_expenses(unit)
     provisional_profit = inventory_value - operating_expenses
     return round(max(0.0, provisional_profit), 2)
-
 
 def calculate_partner_profits(unit):
     """Calculate profit distribution for partners with validation."""
@@ -260,7 +301,6 @@ def calculate_partner_profits(unit):
         lambda x: max(0.0, float(x)) if float(x) >= 0.01 else 0.0
     )
     return partners_df[['Partner', 'Share', 'Total_Entitlement', 'Withdrawn', 'Available_Now']]
-
 
 def record_partner_withdrawal(unit, partner, amount, description):
     """Record a partner withdrawal with validation."""
@@ -278,7 +318,7 @@ def record_partner_withdrawal(unit, partner, amount, description):
         if amount > available:
             raise ValueError(f"Insufficient available balance. Max available: {available:.2f}")
         # Update partner's withdrawn amount in Supabase
-        response = supabase.table('partners').update({
+        supabase.table('partners').update({
             'Withdrawn': available + amount
         }).eq('Partner', partner).eq('unit', unit).execute()
         # Record the expense
@@ -307,33 +347,6 @@ def record_partner_withdrawal(unit, partner, amount, description):
         logging.error(f"Withdrawal failed: {str(e)}")
         raise ValueError(f"Withdrawal failed: {str(e)}")
 
-
-def update_cash_balance(amount, business_unit, operation='add'):
-    """Update cash balance with validation."""
-    try:
-        amount = float(amount)
-        if amount < 0.0:
-            raise ValueError("Amount cannot be negative")
-        if amount > 0.0 and amount < 0.01:
-            raise ValueError("Amount must be at least 0.01")
-        current_balance = st.session_state.cash_balance.get(business_unit, 0.0)
-        if operation == 'add':
-            new_balance = current_balance + amount
-        else:
-            if current_balance < amount:
-                raise ValueError(f"Insufficient funds in {business_unit}")
-            new_balance = current_balance - amount
-        # Update cash balance in Supabase
-        supabase.table('cash_balances').update({
-            'balance': new_balance
-        }).eq('unit', business_unit).execute()
-        st.session_state.cash_balance[business_unit] = new_balance
-        logging.info(f"Updated {business_unit} cash balance: {operation} {amount}")
-    except Exception as e:
-        logging.error(f"Error updating cash balance: {str(e)}")
-        raise ValueError(f"Error updating cash balance: {str(e)}")
-
-
 def record_transaction(type, amount, from_entity, to_entity, description=None):
     """Record a financial transaction."""
     try:
@@ -356,7 +369,6 @@ def record_transaction(type, amount, from_entity, to_entity, description=None):
     except Exception as e:
         logging.error(f"Error recording transaction: {str(e)}")
         raise ValueError(f"Error recording transaction: {str(e)}")
-
 
 def distribute_investment(unit, amount, investor, description=None):
     """Distribute investment to partners according to their shares."""
