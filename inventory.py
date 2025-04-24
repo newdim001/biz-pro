@@ -1,7 +1,40 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
+from supabase import create_client
 from utils import fetch_cash_balance, update_cash_balance  # Import centralized cash balance functions
+
+# Initialize Supabase client
+SUPABASE_URL = "https://umtgkoogrtvyqcrzygoe.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtdGdrb29ncnR2eXFjcnp5Z29lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxMzYyNDYsImV4cCI6MjA2MDcxMjI0Nn0.QMrKSOa91fzE7sNWBfhePhRFG05YMwNbvHYK8Fzkjpk"
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def initialize_cash_balances():
+    """Initialize cash balances for all business units."""
+    try:
+        cash_balances = fetch_cash_balance()
+        if 'cash_balance' not in st.session_state:
+            st.session_state.cash_balance = cash_balances
+    except Exception as e:
+        st.error(f"Failed to initialize cash balances: {str(e)}")
+
+def fetch_inventory(business_unit=None):
+    """Fetch inventory data from Supabase."""
+    try:
+        query = supabase.table("inventory").select("*")
+        if business_unit:
+            query = query.eq("business_unit", business_unit)
+        response = query.execute()
+        return pd.DataFrame(response.data) if response.data else pd.DataFrame(columns=[
+            'date', 'transaction_type', 'quantity_kg', 'unit_price',
+            'total_amount', 'remarks', 'business_unit', 'created_at'
+        ])
+    except Exception as e:
+        st.error(f"Failed to load inventory: {str(e)}")
+        return pd.DataFrame(columns=[
+            'date', 'transaction_type', 'quantity_kg', 'unit_price',
+            'total_amount', 'remarks', 'business_unit', 'created_at'
+        ])
 
 def show_transaction_form(transaction_type: str, business_unit: str):
     """Show form for purchase/sale transactions."""
