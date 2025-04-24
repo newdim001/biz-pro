@@ -65,7 +65,7 @@ def update_cash_balance(amount: float, business_unit: str, action: str) -> bool:
             "business_unit": business_unit,
             "balance": new_balance,
             "last_updated": datetime.now().isoformat()
-        }).execute()
+        }, on_conflict="business_unit").execute()  # Resolve conflict on business_unit
         
         return True
     except Exception as e:
@@ -96,11 +96,11 @@ def add_inventory_record(
     try:
         total_amount = quantity_kg * unit_price
         response = supabase.table("inventory").insert({
-            "date": date_transaction.isoformat(),
+            "inv_date": date_transaction.isoformat(),
             "transaction_type": transaction_type,
             "quantity_kg": quantity_kg,
             "unit_price": unit_price,
-            "total_amount": total_amount,
+            "amount": total_amount,
             "remarks": remarks,
             "business_unit": business_unit
         }).execute()
@@ -200,13 +200,13 @@ def show_inventory():
                 inventory_data = fetch_inventory(unit)
                 if not inventory_data.empty:
                     st.dataframe(
-                        inventory_data.sort_values('date', ascending=False).head(10),
+                        inventory_data.sort_values('inv_date', ascending=False).head(10),
                         column_config={
-                            "date": "Date",
+                            "inv_date": "Date",
                             "transaction_type": "Type",
                             "quantity_kg": "Quantity (kg)",
                             "unit_price": "Unit Price (AED)",
-                            "total_amount": "Total Amount (AED)",
+                            "amount": "Total Amount (AED)",
                             "remarks": "Details"
                         },
                         hide_index=True
