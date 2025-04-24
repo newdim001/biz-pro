@@ -112,7 +112,8 @@ def get_system_summary():
     purchases = inventory[inventory['transaction_type'] == 'Purchase'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
     sales = inventory[inventory['transaction_type'] == 'Sale'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
     
-    total_stock = (purchases['quantity_kg'].sum() if not purchases.empty else 0.0) - (sales['quantity_kg'].sum() if not sales.empty else 0.0)
+    total_stock = (purchases['quantity_kg'].sum() if not purchases.empty else 0.0) - \
+                  (sales['quantity_kg'].sum() if not sales.empty else 0.0)
     total_inventory_value = ((purchases['quantity_kg'] * purchases['unit_price']).sum() if not purchases.empty else 0.0) - \
                             ((sales['quantity_kg'] * sales['unit_price']).sum() if not sales.empty else 0.0)
     
@@ -133,7 +134,8 @@ def get_business_unit_summary(unit):
     purchases = inventory[inventory['transaction_type'] == 'Purchase'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
     sales = inventory[inventory['transaction_type'] == 'Sale'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
     
-    total_stock = (purchases['quantity_kg'].sum() if not purchases.empty else 0.0) - (sales['quantity_kg'].sum() if not sales.empty else 0.0)
+    total_stock = (purchases['quantity_kg'].sum() if not purchases.empty else 0.0) - \
+                  (sales['quantity_kg'].sum() if not sales.empty else 0.0)
     total_inventory_value = ((purchases['quantity_kg'] * purchases['unit_price']).sum() if not purchases.empty else 0.0) - \
                             ((sales['quantity_kg'] * sales['unit_price']).sum() if not sales.empty else 0.0)
     
