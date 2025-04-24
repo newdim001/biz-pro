@@ -257,8 +257,16 @@ def calculate_inventory_value(unit):
     total_stock = (purchases['quantity_kg'].sum() if not purchases.empty else 0.0) - \
                   (sales['quantity_kg'].sum() if not sales.empty else 0.0)
     
-    # Calculate current value based on market price
-    current_value = total_stock * st.session_state.current_price
+    # Calculate weighted average purchase price
+    if not purchases.empty:
+        total_purchase_amount = purchases['total_amount'].sum()
+        total_purchase_quantity = purchases['quantity_kg'].sum()
+        avg_purchase_price = total_purchase_amount / total_purchase_quantity
+    else:
+        avg_purchase_price = st.session_state.current_price  # Fallback to current price if no purchases
+    
+    # Calculate current value based on weighted average purchase price
+    current_value = total_stock * avg_purchase_price
     
     return round(float(total_stock), 2), round(float(current_value), 2)
 
@@ -285,8 +293,14 @@ def calculate_profit_loss(unit):
         (st.session_state.inventory['business_unit'] == unit) &
         (st.session_state.inventory['transaction_type'] == 'Purchase')
     ]
-    gross_profit = (sales['total_amount'].sum() if not sales.empty else 0.0) - (purchases['total_amount'].sum() if not purchases.empty else 0.0)
+    
+    # Calculate gross profit (sales revenue - cost of goods sold)
+    gross_profit = (sales['total_amount'].sum() if not sales.empty else 0.0) - \
+                   (purchases['total_amount'].sum() if not purchases.empty else 0.0)
+    
+    # Calculate net profit (gross profit - operating expenses)
     net_profit = gross_profit - calculate_operating_expenses(unit)
+    
     return round(gross_profit, 2), round(net_profit, 2)
 
 
