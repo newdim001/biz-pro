@@ -133,13 +133,13 @@ def fetch_inventory():
         response = supabase.table('inventory').select('*').execute()
         data = response.data
         return pd.DataFrame(data) if data else pd.DataFrame(columns=[
-            'Date', 'Transaction Type', 'Quantity_kg', 'Unit Price',
+            'Date', 'Transaction_Type', 'Quantity_kg', 'Unit Price',
             'Total Amount', 'Business Unit', 'Description'
         ])
     except Exception as e:
         logging.error(f"Error fetching inventory: {str(e)}")
         return pd.DataFrame(columns=[
-            'Date', 'Transaction Type', 'Quantity_kg', 'Unit Price',
+            'Date', 'Transaction_Type', 'Quantity_kg', 'Unit Price',
             'Total Amount', 'Business Unit', 'Description'
         ])
 
@@ -248,8 +248,8 @@ def calculate_inventory_value(unit):
     ]
     if inventory.empty:
         return 0.0, 0.0
-    purchases = inventory[inventory['Transaction Type'] == 'Purchase']
-    sales = inventory[inventory['Transaction Type'] == 'Sale']
+    purchases = inventory[inventory['Transaction_Type'] == 'Purchase']
+    sales = inventory[inventory['Transaction_Type'] == 'Sale']
     current_stock = purchases['Quantity_kg'].sum() - sales['Quantity_kg'].sum()
     current_value = current_stock * st.session_state.current_price
     return round(float(current_stock), 2), round(float(current_value), 2)
@@ -269,11 +269,11 @@ def calculate_profit_loss(unit):
     """Calculate actual profit from sales."""
     sales = st.session_state.inventory[
         (st.session_state.inventory['Business Unit'] == unit) &
-        (st.session_state.inventory['Transaction Type'] == 'Sale')
+        (st.session_state.inventory['Transaction_Type'] == 'Sale')
     ]
     purchases = st.session_state.inventory[
         (st.session_state.inventory['Business Unit'] == unit) &
-        (st.session_state.inventory['Transaction Type'] == 'Purchase')
+        (st.session_state.inventory['Transaction_Type'] == 'Purchase')
     ]
     gross_profit = float(sales['Total Amount'].sum()) - float(purchases['Total Amount'].sum())
     net_profit = gross_profit - calculate_operating_expenses(unit)
