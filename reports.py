@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from supabase import create_client
-from components.auth import has_permission  # Import the has_permission function
 
 # Initialize Supabase client
 SUPABASE_URL = "https://umtgkoogrtvyqcrzygoe.supabase.co"
@@ -33,23 +32,17 @@ def fetch_expenses(business_unit=None):
     response = query.execute()
     return pd.DataFrame(response.data) if response.data else pd.DataFrame()
 
-# Fetch partnerships data
-def fetch_partnerships(business_unit=None):
-    """Fetch partnerships data from Supabase"""
-    query = supabase.table("partnerships").select("*")
-    if business_unit:
-        query = query.eq("business_unit", business_unit)
-    response = query.execute()
-    return pd.DataFrame(response.data) if response.data else pd.DataFrame()
-
 # Calculate inventory value
 def calculate_inventory_value(unit):
     """Calculate inventory value for a specific unit"""
     inventory_data = fetch_inventory(unit)
     
+    if inventory_data.empty:
+        return 0.0, 0.0
+    
     # Separate purchases and sales
-    purchases = inventory_data[inventory_data['transaction_type'] == 'Purchase'] if not inventory_data.empty else pd.DataFrame(columns=inventory_data.columns)
-    sales = inventory_data[inventory_data['transaction_type'] == 'Sale'] if not inventory_data.empty else pd.DataFrame(columns=inventory_data.columns)
+    purchases = inventory_data[inventory_data['transaction_type'] == 'Purchase']
+    sales = inventory_data[inventory_data['transaction_type'] == 'Sale']
     
     # Calculate net stock (purchases - sales)
     total_stock = (purchases['quantity_kg'].sum() if not purchases.empty else 0.0) - \
@@ -59,7 +52,7 @@ def calculate_inventory_value(unit):
     total_value = ((purchases['quantity_kg'] * purchases['unit_price']).sum() if not purchases.empty else 0.0) - \
                   ((sales['quantity_kg'] * sales['unit_price']).sum() if not sales.empty else 0.0)
     
-    return total_stock, total_value
+    return round(total_stock, 2), round(total_value, 2)
 
 # Calculate profit/loss
 def calculate_profit_loss(unit):
@@ -69,39 +62,6 @@ def calculate_profit_loss(unit):
     net_profit = 0.0
     return gross_profit, net_profit
 
-# Calculate partner profits for a specific unit
-def calculate_partner_profits(unit):
-    """Calculate partner profits for a specific unit"""
-    partnerships_data = fetch_partnerships(unit)
-    if not partnerships_data.empty:
-        # Calculate provisional profit
-        _, inventory_value = calculate_inventory_value(unit)
-        expenses_data = fetch_expenses(unit)
-        operating_expenses = expenses_data['amount'].sum() if not expenses_data.empty else 0.0
-        provisional_profit = inventory_value - operating_expenses
-        
-        # Calculate Total Entitlement based on provisional profit
-        partnerships_data['Total_Entitlement'] = partnerships_data['share'] * 0.01 * provisional_profit
-        partnerships_data['Available_Now'] = partnerships_data['Total_Entitlement'] - partnerships_data['withdrawn']
-    return partnerships_data
-
-# Calculate combined partner profits for all units
-def calculate_combined_partner_profits():
-    """Calculate combined partner profits for all units"""
-    partnerships_data = fetch_partnerships()
-    if not partnerships_data.empty:
-        # Calculate provisional profit for all units
-        stock_a, val_a = calculate_inventory_value('Unit A')
-        stock_b, val_b = calculate_inventory_value('Unit B')
-        expenses_a = fetch_expenses('Unit A')['amount'].sum() if not fetch_expenses('Unit A').empty else 0.0
-        expenses_b = fetch_expenses('Unit B')['amount'].sum() if not fetch_expenses('Unit B').empty else 0.0
-        provisional_profit = (val_a + val_b) - (expenses_a + expenses_b)
-        
-        # Calculate Total Entitlement based on provisional profit
-        partnerships_data['Total_Entitlement'] = partnerships_data['share'] * 0.01 * provisional_profit
-        partnerships_data['Available_Now'] = partnerships_data['Total_Entitlement'] - partnerships_data['withdrawn']
-    return partnerships_data
-
 # Show reports
 def show_reports():
     """Business reporting dashboard"""
@@ -109,6 +69,7 @@ def show_reports():
     if not user or not has_permission(user, 'reports'):  # Check user permissions
         st.error("Permission denied")
         return
+    
     st.header("📈 Business Reports")
     
     # Available units
@@ -126,6 +87,7 @@ def show_reports():
         ["Financial Summary", "Inventory Analysis", "Partner Distributions"],
         key='report_type_selector'
     )
+    
     if report_type == "Financial Summary":
         show_financial_report(units)
     elif report_type == "Inventory Analysis":
@@ -171,9 +133,11 @@ def show_financial_report(units):
             except Exception as e:
                 st.error(f"Error calculating {unit} financials: {str(e)}")
                 continue
+    
     if not data:
         st.warning("No financial data available")
         return
+    
     df = pd.DataFrame(data)
     
     # Display metrics
@@ -279,6 +243,7 @@ def show_partner_report(units):
                 if not data.empty:
                     # Select only the required columns
                     data = data[['business_unit', 'partner_name', 'share', 'withdrawn', 'Total_Entitlement', 'Available_Now']]
+            
             if not data.empty:
                 # Metrics
                 total = data['Available_Now'].sum()
