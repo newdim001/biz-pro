@@ -33,6 +33,16 @@ def add_inventory_record(
     """Add a new inventory transaction"""
     try:
         total_amount = quantity_kg * unit_price
+        
+        # First try to update cash balance
+        if transaction_type == "Purchase":
+            if not update_cash_balance(total_amount, business_unit, 'subtract'):
+                return False
+        elif transaction_type == "Sale":
+            if not update_cash_balance(total_amount, business_unit, 'add'):
+                return False
+        
+        # Then record the transaction
         response = supabase.table("inventory").insert({
             "date": date_transaction.isoformat(),
             "transaction_type": transaction_type,
@@ -42,6 +52,7 @@ def add_inventory_record(
             "remarks": remarks,
             "business_unit": business_unit
         }).execute()
+        
         return bool(response.data)
     except Exception as e:
         st.error(f"Failed to record transaction: {str(e)}")
@@ -74,12 +85,6 @@ def show_transaction_form(transaction_type: str, business_unit: str):
                 st.error("Quantity and price must be positive values")
                 return
             
-            if transaction_type == "Purchase":
-                if not update_cash_balance(total_amount, business_unit, 'subtract'):
-                    return
-            elif transaction_type == "Sale":
-                update_cash_balance(total_amount, business_unit, 'add')
-            
             if add_inventory_record(
                 transaction_type=transaction_type,
                 business_unit=business_unit,
@@ -90,6 +95,8 @@ def show_transaction_form(transaction_type: str, business_unit: str):
             ):
                 st.success(f"{transaction_type} recorded successfully!")
                 st.rerun()
+            else:
+                st.error("Failed to record transaction")
 
 def show_inventory():
     """Main inventory management interface"""
@@ -131,9 +138,9 @@ def show_inventory():
                         column_config={
                             "date": "Date",
                             "transaction_type": "Type",
-                            "quantity_kg": "Quantity (kg)",
-                            "unit_price": "Unit Price (AED)",
-                            "total_amount": "Total Amount (AED)",
+                            "quantity_kg": st.column_config.NumberColumn("Quantity (kg)", format="%.3f"),
+                            "unit_price": st.column_config.NumberColumn("Unit Price (AED)", format="%.2f"),
+                            "total_amount": st.column_config.NumberColumn("Total Amount (AED)", format="%.2f"),
                             "remarks": "Details"
                         },
                         hide_index=True
