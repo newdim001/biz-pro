@@ -60,11 +60,25 @@ def update_cash_balance(amount: float, business_unit: str, action: str) -> bool:
         else:  # 'add'
             new_balance = current_balance + amount
         
-        # Update balance with last_updated timestamp
-        supabase.table("cash_balances").update({
-            "balance": new_balance,
-            "last_updated": datetime.now().isoformat()
-        }).eq("business_unit", business_unit).execute()  # Update based on business_unit
+        # First try to update existing record
+        update_response = supabase.table("cash_balances")\
+                                .update({
+                                    "balance": new_balance,
+                                    "last_updated": datetime.now().isoformat()
+                                })\
+                                .eq("business_unit", business_unit)\
+                                .execute()
+        
+        # If no rows were updated (record doesn't exist), insert new record
+        if not update_response.data:
+            insert_response = supabase.table("cash_balances").insert({
+                "business_unit": business_unit,
+                "balance": new_balance,
+                "last_updated": datetime.now().isoformat()
+            }).execute()
+            
+            if not insert_response.data:
+                raise Exception("Failed to create new balance record")
         
         return True
     except Exception as e:
@@ -91,22 +105,69 @@ def add_inventory_record(
     unit_price: float,
     remarks: str
 ) -> bool:
-    """Add a new inventory transaction"""
+    """Add a new inventory transaction with proper error handling"""
     try:
         total_amount = quantity_kg * unit_price
+        
+        # Record the inventory transaction first
         response = supabase.table("inventory").insert({
-            "inv_date": date_transaction.isoformat(),
+            "date": date_transaction.isoformat(),
             "transaction_type": transaction_type,
             "quantity_kg": quantity_kg,
             "unit_price": unit_price,
-            "amount": total_amount,
+            "total_amount": total_amount,
             "remarks": remarks,
             "business_unit": business_unit
         }).execute()
-        return bool(response.data)
+        
+        if not response.data:
+            raise Exception("Failed to create inventory record")
+        
+        # Then update cash balance if successful
+        if transaction_type == "Purchase":
+            if not update_cash_balance(total_amount, business_unit, 'subtract'):
+                # Rollback inventory if cash update fails
+                supabase.table("inventory")\
+                       .delete()\
+                       .eq("id", response.data[0]['id'])\
+                       .execute()
+                return False
+        elif transaction_type == "Sale":
+            if not update_cash_balance(total_amount, business_unit, 'add'):
+                # Rollback inventory if cash update fails
+                supabase.table("inventory")\
+                       .delete()\
+                       .eq("id", response.data[0]['id'])\
+                       .execute()
+                return False
+        
+        return True
     except Exception as e:
         st.error(f"Failed to record transaction: {str(e)}")
         return False
+
+def show_inventory_summary(business_unit: str):
+    """Show summary of inventory and cash balance"""
+    inventory_data = fetch_inventory(business_unit)
+    current_balance = fetch_cash_balance(business_unit)
+    
+    cols = st.columns(3)
+    with cols[0]:
+        st.metric("Current Cash Balance", f"AED {current_balance:,.2f}")
+    
+    if not inventory_data.empty:
+        # Calculate inventory metrics
+        purchases = inventory_data[inventory_data['transaction_type'] == 'Purchase']
+        sales = inventory_data[inventory_data['transaction_type'] == 'Sale']
+        
+        total_stock = purchases['quantity_kg'].sum() - sales['quantity_kg'].sum()
+        inventory_value = (purchases['quantity_kg'] * purchases['unit_price']).sum() - \
+                        (sales['quantity_kg'] * sales['unit_price']).sum()
+        
+        with cols[1]:
+            st.metric("Current Stock", f"{total_stock:,.2f} kg")
+        with cols[2]:
+            st.metric("Inventory Value", f"AED {inventory_value:,.2f}")
 
 def show_transaction_form(transaction_type: str, business_unit: str):
     """Show form for purchase/sale transactions"""
@@ -128,7 +189,13 @@ def show_transaction_form(transaction_type: str, business_unit: str):
                                   max_chars=100)
         
         total_amount = quantity_kg * unit_price
+        current_balance = fetch_cash_balance(business_unit)
+        
         st.write(f"Total Amount: AED {total_amount:,.2f}")
+        if transaction_type == "Purchase":
+            st.write(f"Current Balance: AED {current_balance:,.2f}")
+            if total_amount > current_balance:
+                st.warning("This purchase will exceed current balance!")
         
         if st.form_submit_button(f"Record {transaction_type}"):
             # Validate inputs
@@ -136,16 +203,10 @@ def show_transaction_form(transaction_type: str, business_unit: str):
                 st.error("Quantity and price must be positive values")
                 return
             
-            # Handle cash balance for purchases
-            if transaction_type == "Purchase":
-                if not update_cash_balance(total_amount, business_unit, 'subtract'):
-                    return
+            if transaction_type == "Purchase" and total_amount > current_balance:
+                st.error("Cannot complete purchase: insufficient funds")
+                return
             
-            # Handle cash balance for sales
-            elif transaction_type == "Sale":
-                update_cash_balance(total_amount, business_unit, 'add')
-            
-            # Record the transaction
             if add_inventory_record(
                 transaction_type=transaction_type,
                 business_unit=business_unit,
@@ -185,6 +246,9 @@ def show_inventory():
         unit_tabs = st.tabs(units)
         for i, unit in enumerate(units):
             with unit_tabs[i]:
+                # Show summary at the top
+                show_inventory_summary(unit)
+                
                 # Purchase/Sale subtabs
                 tab1, tab2 = st.tabs(["Purchase", "Sale"])
                 
@@ -198,17 +262,30 @@ def show_inventory():
                 st.subheader(f"Recent Transactions - {unit}")
                 inventory_data = fetch_inventory(unit)
                 if not inventory_data.empty:
+                    display_data = inventory_data.sort_values('date', ascending=False).head(10).copy()
+                    display_data['date'] = pd.to_datetime(display_data['date']).dt.date
+                    
                     st.dataframe(
-                        inventory_data.sort_values('inv_date', ascending=False).head(10),
+                        display_data,
                         column_config={
-                            "inv_date": "Date",
+                            "date": "Date",
                             "transaction_type": "Type",
-                            "quantity_kg": "Quantity (kg)",
-                            "unit_price": "Unit Price (AED)",
-                            "amount": "Total Amount (AED)",
+                            "quantity_kg": st.column_config.NumberColumn(
+                                "Quantity (kg)",
+                                format="%.3f kg"
+                            ),
+                            "unit_price": st.column_config.NumberColumn(
+                                "Unit Price",
+                                format="AED %.2f"
+                            ),
+                            "total_amount": st.column_config.NumberColumn(
+                                "Total Amount",
+                                format="AED %.2f"
+                            ),
                             "remarks": "Details"
                         },
-                        hide_index=True
+                        hide_index=True,
+                        use_container_width=True
                     )
                 else:
                     st.info("No transactions found for this unit")
