@@ -36,7 +36,6 @@ def fetch_expenses(business_unit=None):
 def calculate_inventory_value(unit):
     """Calculate inventory value for a specific unit"""
     inventory_data = fetch_inventory(unit)
-    
     if inventory_data.empty:
         return 0.0, 0.0
     
@@ -48,19 +47,13 @@ def calculate_inventory_value(unit):
     total_stock = (purchases['quantity_kg'].sum() if not purchases.empty else 0.0) - \
                   (sales['quantity_kg'].sum() if not sales.empty else 0.0)
     
-    # Calculate total inventory value
-    total_value = ((purchases['quantity_kg'] * purchases['unit_price']).sum() if not purchases.empty else 0.0) - \
-                  ((sales['quantity_kg'] * sales['unit_price']).sum() if not sales.empty else 0.0)
+    # Fetch current market price (assuming it's stored in session state)
+    current_market_price = st.session_state.get('current_price', 50.0)  # Default to 50.0 if not set
     
-    return round(total_stock, 2), round(total_value, 2)
-
-# Calculate profit/loss
-def calculate_profit_loss(unit):
-    """Calculate gross and net profit for a specific unit"""
-    # Replace this with actual logic to calculate profit/loss
-    gross_profit = 0.0
-    net_profit = 0.0
-    return gross_profit, net_profit
+    # Calculate total inventory value
+    current_value = total_stock * current_market_price
+    
+    return round(total_stock, 2), round(current_value, 2)
 
 # Show reports
 def show_reports():
