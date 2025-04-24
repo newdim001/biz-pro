@@ -60,7 +60,7 @@ def update_cash_balance(amount: float, business_unit: str, action: str) -> bool:
         else:  # 'add'
             new_balance = current_balance + amount
         
-        # Update balance
+        # Update balance with last_updated timestamp
         supabase.table("cash_balances").upsert({
             "business_unit": business_unit,
             "balance": new_balance,
@@ -95,16 +95,6 @@ def add_inventory_record(
     """Add a new inventory transaction"""
     try:
         total_amount = quantity_kg * unit_price
-        
-        # First handle the cash balance update
-        if transaction_type == "Purchase":
-            if not update_cash_balance(total_amount, business_unit, 'subtract'):
-                return False
-        elif transaction_type == "Sale":
-            if not update_cash_balance(total_amount, business_unit, 'add'):
-                return False
-        
-        # Then record the inventory transaction
         response = supabase.table("inventory").insert({
             "date": date_transaction.isoformat(),
             "transaction_type": transaction_type,
@@ -114,7 +104,6 @@ def add_inventory_record(
             "remarks": remarks,
             "business_unit": business_unit
         }).execute()
-        
         return bool(response.data)
     except Exception as e:
         st.error(f"Failed to record transaction: {str(e)}")
@@ -129,9 +118,9 @@ def show_transaction_form(transaction_type: str, business_unit: str):
         with cols[0]:
             date_transaction = st.date_input("Date", value=date.today())
             quantity_kg = st.number_input("Quantity (kg)", 
-                                        min_value=0.001, 
-                                        step=0.001, 
-                                        format="%.3f")
+                                         min_value=0.001, 
+                                         step=0.001, 
+                                         format="%.3f")
         with cols[1]:
             unit_price = st.number_input("Price per kg (AED)", 
                                        min_value=0.01, 
@@ -142,18 +131,20 @@ def show_transaction_form(transaction_type: str, business_unit: str):
         total_amount = quantity_kg * unit_price
         st.write(f"Total Amount: AED {total_amount:,.2f}")
         
-        # Show current balance for context
-        current_balance = fetch_cash_balance(business_unit)
-        if transaction_type == "Purchase":
-            st.write(f"Current Balance: AED {current_balance:,.2f}")
-            if total_amount > current_balance:
-                st.warning("This purchase will exceed current balance!")
-        
         if st.form_submit_button(f"Record {transaction_type}"):
             # Validate inputs
             if quantity_kg <= 0 or unit_price <= 0:
                 st.error("Quantity and price must be positive values")
                 return
+            
+            # Handle cash balance for purchases
+            if transaction_type == "Purchase":
+                if not update_cash_balance(total_amount, business_unit, 'subtract'):
+                    return
+            
+            # Handle cash balance for sales
+            elif transaction_type == "Sale":
+                update_cash_balance(total_amount, business_unit, 'add')
             
             # Record the transaction
             if add_inventory_record(
@@ -166,27 +157,6 @@ def show_transaction_form(transaction_type: str, business_unit: str):
             ):
                 st.success(f"{transaction_type} recorded successfully!")
                 st.rerun()
-
-def show_inventory_summary(business_unit: str):
-    """Show summary of inventory and cash balance"""
-    inventory_data = fetch_inventory(business_unit)
-    current_balance = fetch_cash_balance(business_unit)
-    
-    if not inventory_data.empty:
-        # Calculate inventory metrics
-        total_stock = inventory_data[inventory_data['transaction_type'] == 'Purchase']['quantity_kg'].sum() - \
-                     inventory_data[inventory_data['transaction_type'] == 'Sale']['quantity_kg'].sum()
-        
-        avg_purchase_price = inventory_data[inventory_data['transaction_type'] == 'Purchase']['unit_price'].mean()
-        
-        # Display metrics
-        cols = st.columns(3)
-        with cols[0]:
-            st.metric("Current Cash Balance", f"AED {current_balance:,.2f}")
-        with cols[1]:
-            st.metric("Total Stock", f"{total_stock:,.2f} kg")
-        with cols[2]:
-            st.metric("Avg Purchase Price", f"AED {avg_purchase_price:,.2f}/kg" if not pd.isna(avg_purchase_price) else "N/A")
 
 def show_inventory():
     """Main inventory management interface"""
@@ -216,9 +186,6 @@ def show_inventory():
         unit_tabs = st.tabs(units)
         for i, unit in enumerate(units):
             with unit_tabs[i]:
-                # Show summary at the top
-                show_inventory_summary(unit)
-                
                 # Purchase/Sale subtabs
                 tab1, tab2 = st.tabs(["Purchase", "Sale"])
                 
@@ -232,32 +199,17 @@ def show_inventory():
                 st.subheader(f"Recent Transactions - {unit}")
                 inventory_data = fetch_inventory(unit)
                 if not inventory_data.empty:
-                    # Format the display
-                    display_data = inventory_data.sort_values('date', ascending=False).head(10).copy()
-                    display_data['date'] = pd.to_datetime(display_data['date']).dt.date
-                    
                     st.dataframe(
-                        display_data,
+                        inventory_data.sort_values('date', ascending=False).head(10),
                         column_config={
                             "date": "Date",
                             "transaction_type": "Type",
-                            "quantity_kg": st.column_config.NumberColumn(
-                                "Quantity (kg)",
-                                format="%.3f kg"
-                            ),
-                            "unit_price": st.column_config.NumberColumn(
-                                "Unit Price",
-                                format="AED %.2f"
-                            ),
-                            "total_amount": st.column_config.NumberColumn(
-                                "Total Amount",
-                                format="AED %.2f"
-                            ),
-                            "remarks": "Details",
-                            "business_unit": "Unit"
+                            "quantity_kg": "Quantity (kg)",
+                            "unit_price": "Unit Price (AED)",
+                            "total_amount": "Total Amount (AED)",
+                            "remarks": "Details"
                         },
-                        hide_index=True,
-                        use_container_width=True
+                        hide_index=True
                     )
                 else:
                     st.info("No transactions found for this unit")
