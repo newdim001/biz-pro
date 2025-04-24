@@ -108,10 +108,14 @@ def get_system_summary():
     inventory = fetch_inventory()
     expenses = fetch_expenses()
     
+    # Separate purchases and sales
+    purchases = inventory[inventory['transaction_type'] == 'Purchase']
+    sales = inventory[inventory['transaction_type'] == 'Sale']
+    
     return {
         "Total Cash": sum(cash_balances.values()) if cash_balances else 0.0,
-        "Total Inventory Value": (inventory['quantity_kg'] * inventory['unit_price']).sum() if not inventory.empty else 0.0,
-        "Total Stock": inventory['quantity_kg'].sum() if not inventory.empty else 0.0,
+        "Total Inventory Value": (purchases['quantity_kg'] * purchases['unit_price']).sum() - (sales['quantity_kg'] * sales['unit_price']).sum(),
+        "Total Stock": purchases['quantity_kg'].sum() - sales['quantity_kg'].sum(),
         "Total Expenses": expenses['amount'].sum() if not expenses.empty else 0.0
     }
 
@@ -121,10 +125,14 @@ def get_business_unit_summary(unit):
     inventory = fetch_inventory(unit)
     expenses = fetch_expenses(unit)
     
+    # Separate purchases and sales
+    purchases = inventory[inventory['transaction_type'] == 'Purchase']
+    sales = inventory[inventory['transaction_type'] == 'Sale']
+    
     return {
         "Cash Balance": cash_balance,
-        "Inventory Quantity": inventory['quantity_kg'].sum() if not inventory.empty else 0.0,
-        "Inventory Value": (inventory['quantity_kg'] * inventory['unit_price']).sum() if not inventory.empty else 0.0,
+        "Inventory Quantity": purchases['quantity_kg'].sum() - sales['quantity_kg'].sum(),
+        "Inventory Value": (purchases['quantity_kg'] * purchases['unit_price']).sum() - (sales['quantity_kg'] * sales['unit_price']).sum(),
         "Operating Expenses": expenses['amount'].sum() if not expenses.empty else 0.0
     }
 
