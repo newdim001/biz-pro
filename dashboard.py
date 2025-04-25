@@ -74,8 +74,6 @@ def fetch_price_history():
         st.error(f"Failed to load price history: {str(e)}")
         return pd.DataFrame()
 
-
-
 # Data Update Functions
 def update_market_price(new_price):
     """Update the current market price in Supabase"""
@@ -121,14 +119,18 @@ def get_system_summary():
     purchases = inventory[inventory['transaction_type'] == 'Purchase'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
     sales = inventory[inventory['transaction_type'] == 'Sale'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
     
-    total_stock = calculate_current_stock(None)  # None returns system-wide stock
-    total_inventory_value = ((purchases['quantity_kg'] * purchases['unit_price']).sum() if not purchases.empty else 0.0) - \
-                            ((sales['quantity_kg'] * sales['unit_price']).sum() if not sales.empty else 0.0)
+    current_stock = calculate_current_stock(None)  # None returns system-wide stock
+    current_market_price, _ = fetch_latest_market_price()
+    current_inventory_value = current_stock * current_market_price
+    
+    inventory_value_purchase_price = ((purchases['quantity_kg'] * purchases['unit_price']).sum() if not purchases.empty else 0.0) - \
+                                    ((sales['quantity_kg'] * sales['unit_price']).sum() if not sales.empty else 0.0)
     
     return {
         "Total Cash": sum(cash_balances.values()) if cash_balances else 0.0,
-        "Total Inventory Value": total_inventory_value,
-        "Total Stock": total_stock,
+        "Current Inventory Value": current_inventory_value,
+        "Inventory Value (Purchase Price)": inventory_value_purchase_price,
+        "Current Stock": current_stock,
         "Total Expenses": expenses['amount'].sum() if not expenses.empty else 0.0
     }
 
@@ -142,14 +144,18 @@ def get_business_unit_summary(unit):
     purchases = inventory[inventory['transaction_type'] == 'Purchase'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
     sales = inventory[inventory['transaction_type'] == 'Sale'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
     
-    total_stock = calculate_current_stock(unit)
-    total_inventory_value = ((purchases['quantity_kg'] * purchases['unit_price']).sum() if not purchases.empty else 0.0) - \
-                            ((sales['quantity_kg'] * sales['unit_price']).sum() if not sales.empty else 0.0)
+    current_stock = calculate_current_stock(unit)
+    current_market_price, _ = fetch_latest_market_price()
+    current_inventory_value = current_stock * current_market_price
+    
+    inventory_value_purchase_price = ((purchases['quantity_kg'] * purchases['unit_price']).sum() if not purchases.empty else 0.0) - \
+                                    ((sales['quantity_kg'] * sales['unit_price']).sum() if not sales.empty else 0.0)
     
     return {
         "Cash Balance": cash_balance,
-        "Inventory Quantity": total_stock,
-        "Inventory Value": total_inventory_value,
+        "Current Inventory Value": current_inventory_value,
+        "Inventory Value (Purchase Price)": inventory_value_purchase_price,
+        "Current Stock": current_stock,
         "Operating Expenses": expenses['amount'].sum() if not expenses.empty else 0.0
     }
 
@@ -197,11 +203,12 @@ def show_business_overview():
     with cols[0]:
         st.metric("Total Cash", f"AED {summary['Total Cash']:,.2f}")
     with cols[1]:
-        st.metric("Inventory Value", f"AED {summary['Total Inventory Value']:,.2f}")
+        st.metric("Current Inventory Value", f"AED {summary['Current Inventory Value']:,.2f}",
+                 f"Purchase Value: AED {summary['Inventory Value (Purchase Price)']:,.2f}")
     with cols[2]:
-        st.metric("Total Stock", f"{summary['Total Stock']:,.2f} kg")
+        st.metric("Current Stock", f"{summary['Current Stock']:,.2f} kg")
     with cols[3]:
-        st.metric("Provisional Profit", f"AED {summary['Total Inventory Value'] - summary['Total Expenses']:,.2f}")
+        st.metric("Provisional Profit", f"AED {summary['Current Inventory Value'] - summary['Total Expenses']:,.2f}")
 
 def show_unit_dashboard(unit):
     """Show dashboard for a specific business unit"""
@@ -212,9 +219,10 @@ def show_unit_dashboard(unit):
     with cols[0]:
         st.metric("Cash Balance", f"AED {summary['Cash Balance']:,.2f}")
     with cols[1]:
-        st.metric("Inventory Value", f"AED {summary['Inventory Value']:,.2f}")
+        st.metric("Current Inventory Value", f"AED {summary['Current Inventory Value']:,.2f}",
+                 f"Purchase Value: AED {summary['Inventory Value (Purchase Price)']:,.2f}")
     with cols[2]:
-        st.metric("Stock Quantity", f"{summary['Inventory Quantity']:,.2f} kg")
+        st.metric("Current Stock", f"{summary['Current Stock']:,.2f} kg")
     with cols[3]:
         st.metric("Operating Expenses", f"AED {summary['Operating Expenses']:,.2f}")
 
