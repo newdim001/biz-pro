@@ -70,7 +70,7 @@ def fetch_cash_balance(business_unit):
         
         # If no record exists, create one with default balance
         default_balance = 10000.0
-        supabase.table('cash_balances').insert({
+        supabase.table('cash_balances').upsert({
             "business_unit": business_unit,
             "balance": default_balance,
             "updated_at": datetime.now().isoformat()
@@ -112,7 +112,7 @@ def update_cash_balance(amount, business_unit, operation='add'):
         
         # Update balance in database
         response = supabase.table('cash_balances')\
-                   .update({
+                   .upsert({
                        "balance": new_balance,
                        "last_updated": datetime.now().isoformat()
                    })\
