@@ -1,13 +1,4 @@
-# app.py - MUST be first Streamlit command
 import streamlit as st
-st.set_page_config(
-    page_title="BizMaster Pro",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Now other imports
 from supabase import create_client
 import time
 from datetime import date
@@ -48,10 +39,12 @@ def refresh_session() -> bool:
         if not supabase:
             return False
             
+        # Get current session (Supabase handles refresh token automatically)
         current_session = supabase.auth.get_session()
         if current_session:
             return True
             
+        # Attempt explicit refresh if no session found
         try:
             supabase.auth.refresh_session()
             return supabase.auth.get_session() is not None
@@ -69,6 +62,7 @@ def authenticate(username: str, password: str) -> Optional[Dict]:
         if not supabase:
             return None
             
+        # Basic input validation
         if not username or not password:
             st.warning("Please enter both username and password")
             return None
@@ -187,6 +181,7 @@ def initialize_default_data() -> None:
         if not supabase:
             raise Exception("Database not initialized")
             
+        # Check if market price exists
         response = supabase.table("market_prices") \
                          .select("*") \
                          .order("date", desc=True) \
@@ -194,14 +189,17 @@ def initialize_default_data() -> None:
                          .execute()
                          
         if not response.data:
+            # Insert default market price
             default_price = {
                 "price": 50.0,
                 "date": date.today().isoformat()
             }
             supabase.table("market_prices").insert(default_price).execute()
         
+        # Check if cash balances exist
         cash_response = supabase.table("cash_balances").select("*").execute()
         if not cash_response.data:
+            # Insert default cash balances
             default_cash_balances = [
                 {"business_unit": "Unit A", "balance": 40000000.0},
                 {"business_unit": "Unit B", "balance": 10000.0}
@@ -213,13 +211,14 @@ def initialize_default_data() -> None:
         raise
 
 def reset_all_data() -> None:
-    """Secure data reset function"""
+    """Secure data reset function with proper authentication handling"""
     try:
+        # Verify admin session
         if 'user' not in st.session_state or st.session_state.user.get('role') != 'admin':
             st.error("Administrator privileges required")
             return
 
-        st.warning("⚠️ This will delete ALL data and reset to defaults!")
+        st.warning("⚠️ This will delete ALL data and reset to defaults. Use with extreme caution!")
         confirmation = st.text_input("Type 'RESET' to confirm:", key="reset_confirmation")
         
         if confirmation.strip().upper() != "RESET":
@@ -227,14 +226,17 @@ def reset_all_data() -> None:
                 st.error("Confirmation text must be exactly 'RESET'")
             return
 
+        # Verify session is still valid
         if not refresh_session():
             st.error("Session expired. Please login again")
             return
 
+        # Create progress UI
         status_area = st.empty()
         progress_bar = st.progress(0)
         status_area.info("🚀 Starting data reset process...")
 
+        # Reset tables in proper order
         tables = [
             "partnerships",
             "investments", 
@@ -248,6 +250,8 @@ def reset_all_data() -> None:
             try:
                 status_area.info(f"🔄 Resetting {table}...")
                 progress_bar.progress((i + 1) / (len(tables) + 2))
+                
+                # Delete all records from table
                 response = supabase.table(table).delete().neq('id', 0).execute()
                 
                 if hasattr(response, 'error') and response.error:
@@ -257,10 +261,12 @@ def reset_all_data() -> None:
                 status_area.error(f"❌ Failed resetting {table}: {str(table_error)}")
                 return
 
+        # Initialize default data
         status_area.info("📦 Loading default data...")
         progress_bar.progress(90)
         initialize_default_data()
         
+        # Complete
         progress_bar.progress(100)
         status_area.success("✅ Data reset completed successfully!")
         time.sleep(2)
@@ -275,6 +281,7 @@ def show_main_interface(user: Dict) -> None:
     st.markdown(f'<p class="main-title">BizMaster Pro - Welcome {user["full_name"]} ({user["role"].capitalize()})</p>', 
                 unsafe_allow_html=True)
 
+    # Sidebar menu
     with st.sidebar:
         st.markdown(f'<p style="font-size:14px;"><strong>👤 {user["email"]}</strong></p>', 
                     unsafe_allow_html=True)
@@ -286,6 +293,7 @@ def show_main_interface(user: Dict) -> None:
         if st.button("🚪 Logout", key="logout_btn", use_container_width=True):
             logout()
 
+        # Menu options based on user role
         menu_options = []
         if has_permission(user['role'], 'dashboard'):
             menu_options.append("📊 Dashboard")
@@ -306,6 +314,7 @@ def show_main_interface(user: Dict) -> None:
 
         menu = st.selectbox("Navigation", menu_options, key="main_menu")
 
+    # Render selected feature
     try:
         if menu == "📊 Dashboard":
             show_dashboard()
@@ -330,18 +339,22 @@ def show_main_interface(user: Dict) -> None:
 def main() -> None:
     """Main function to run the application"""
     try:
+        # Initialize session state and styles
         initialize_session_state()
         st.markdown(get_common_styles(), unsafe_allow_html=True)
         
+        # Validate session
         if 'user' not in st.session_state:
             user_data = validate_session()
             if user_data:
                 st.session_state['user'] = user_data
         
+        # Show login if no user is logged in
         if 'user' not in st.session_state:
             show_login()
             return
 
+        # User is logged in - show main interface
         show_main_interface(st.session_state['user'])
 
     except Exception as e:
@@ -349,4 +362,13 @@ def main() -> None:
         st.error("A critical error occurred. Please refresh the page or contact support.")
 
 if __name__ == "__main__":
+    # Set page config
+    st.set_page_config(
+        page_title="BizMaster Pro",
+        page_icon="📊",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    # Run main app
     main()
