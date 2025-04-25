@@ -59,7 +59,14 @@ def show_transaction_form(transaction_type: str, business_unit: str):
                     st.error("Quantity and price must be positive values")
                     return
                 
-                # Record inventory transaction first
+                # First check cash balance for purchases
+                if transaction_type == "Purchase":
+                    current_balance = fetch_cash_balance(business_unit)
+                    if current_balance < total_amount:
+                        st.error(f"Insufficient funds in {business_unit}")
+                        return
+                
+                # Record inventory transaction
                 inventory_data = {
                     "transaction_type": transaction_type,
                     "business_unit": business_unit,
@@ -76,18 +83,20 @@ def show_transaction_form(transaction_type: str, business_unit: str):
                 if not response.data:
                     raise ValueError("Failed to record inventory transaction")
                 
-                # Handle cash balance AFTER successful inventory record
-                if transaction_type == "Purchase":
-                    if not update_cash_balance(total_amount, business_unit, 'subtract'):
-                        # Rollback inventory if balance update fails
-                        supabase.table("inventory")\
-                            .delete()\
-                            .eq("id", response.data[0]['id'])\
-                            .execute()
-                        st.error(f"Insufficient funds in {business_unit}")
-                        return
-                elif transaction_type == "Sale":
-                    update_cash_balance(total_amount, business_unit, 'add')
+                # Handle cash balance update
+                success = update_cash_balance(
+                    total_amount, 
+                    business_unit, 
+                    'subtract' if transaction_type == 'Purchase' else 'add'
+                )
+                
+                if not success:
+                    # Rollback inventory if balance update fails
+                    supabase.table("inventory")\
+                        .delete()\
+                        .eq("id", response.data[0]['id'])\
+                        .execute()
+                    raise ValueError("Failed to update cash balance")
                 
                 st.success(f"{transaction_type} recorded successfully!")
                 refresh_inventory_data(business_unit)
