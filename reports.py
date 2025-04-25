@@ -1,6 +1,13 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from utils import (
+    fetch_inventory, fetch_cash_balances, fetch_expenses,
+    calculate_current_stock, calculate_inventory_value,
+    calculate_profit_loss, calculate_partner_profits,
+    calculate_combined_partner_profits
+)
+
 from supabase import create_client
 
 # Initialize Supabase client
