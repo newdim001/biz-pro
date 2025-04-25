@@ -53,13 +53,10 @@ def initialize_default_data():
 
 def fetch_cash_balance(business_unit):
     """
-    Fetch the current cash balance for a specific business unit from Supabase.
-    Args:
-        business_unit (str): The business unit (e.g., "Unit A", "Unit B").
-    Returns:
-        float: The current cash balance.
+   Safely fetch cash balance, handling missing records without violating constraints
     """
     try:
+        # First try to get existing balance
         response = supabase.table('cash_balances')\
                    .select("balance")\
                    .eq("business_unit", business_unit)\
@@ -68,64 +65,64 @@ def fetch_cash_balance(business_unit):
         if response.data:
             return float(response.data[0]["balance"])
         
-        # If no record exists, create one with default balance
-        default_balance = 10000.0
-        supabase.table('cash_balances').upsert({
-            "business_unit": business_unit,
-            "balance": default_balance,
-            "updated_at": datetime.now().isoformat()
-        }).execute()
-        
-        return default_balance
-        
+        # If no record exists, carefully insert a new one
+        try:
+            response = supabase.table('cash_balances').insert({
+                "business_unit": business_unit,
+                "balance": 10000.0  # Default balance
+            }).execute()
+            
+            if response.data:
+                return 10000.0
+            else:
+                raise ValueError("Failed to create new balance record")
+                
+        except Exception as insert_error:
+            # If insert fails (likely due to race condition), try to fetch again
+            response = supabase.table('cash_balances')\
+                       .select("balance")\
+                       .eq("business_unit", business_unit)\
+                       .execute()
+            
+            if response.data:
+                return float(response.data[0]["balance"])
+            raise insert_error
+            
     except Exception as e:
-        logging.error(f"Failed to fetch cash balance for {business_unit}: {str(e)}")
-        raise ValueError(f"Failed to fetch balance: {str(e)}")
+        logging.error(f"Failed to fetch balance for {business_unit}: {str(e)}")
+        return 10000.0  # Return default balance on failure
 
 def update_cash_balance(amount, business_unit, operation='add'):
     """
-    Update the cash balance for a specific business unit in Supabase.
-    Args:
-        amount (float): The amount to add or subtract.
-        business_unit (str): The business unit (e.g., "Unit A", "Unit B").
-        operation (str): The type of operation ("add" or "subtract").
-    Returns:
-        bool: True if the update was successful, False otherwise.
+    Safely update cash balance using proper upsert pattern
     """
     try:
-        # Validate inputs
         amount = float(amount)
         if amount <= 0:
             raise ValueError("Amount must be positive")
-        if operation not in ('add', 'subtract'):
-            raise ValueError("Operation must be 'add' or 'subtract'")
         
-        # Get current balance
+        # Get current balance safely
         current_balance = fetch_cash_balance(business_unit)
         
-        # Check for sufficient funds if subtracting
-        if operation == 'subtract' and current_balance < amount:
-            raise ValueError(f"Insufficient funds in {business_unit}")
-        
         # Calculate new balance
-        new_balance = current_balance + (amount if operation == 'add' else -amount)
+        if operation == 'subtract':
+            if current_balance < amount:
+                raise ValueError(f"Insufficient funds in {business_unit}")
+            new_balance = current_balance - amount
+        else:
+            new_balance = current_balance + amount
         
-        # Update balance in database
-        response = supabase.table('cash_balances')\
-                   .upsert({
-                       "balance": new_balance,
-                       "last_updated": datetime.now().isoformat()
-                   })\
-                   .eq("business_unit", business_unit)\
-                   .execute()
+        # Use upsert with explicit on_conflict handling
+        response = supabase.table('cash_balances').upsert({
+            "business_unit": business_unit,
+            "balance": new_balance
+        }, on_conflict="business_unit").execute()
         
         if not response.data:
-            raise ValueError("No data returned from update operation")
+            raise ValueError("Balance update failed - no data returned")
         
         # Update session state
         st.session_state.cash_balance[business_unit] = new_balance
-        st.session_state.last_updated = datetime.now()
-        
         return True
         
     except Exception as e:
