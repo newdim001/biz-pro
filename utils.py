@@ -145,23 +145,41 @@ def fetch_latest_market_price():
         logging.error(f"Error fetching latest market price: {str(e)}")
         return 50.0, date.today()
 
-def fetch_inventory(unit=None):
-    """Fetch inventory data from Supabase for a specific unit or all units."""
+def fetch_inventory(business_unit=None):
+    """
+    Fetch inventory data from Supabase with type conversion.
+    """
     try:
-        query = supabase.table('inventory').select('*')
-        if unit:
-            query = query.eq('business_unit', unit)
+        query = supabase.table("inventory").select("*")
+        if business_unit:
+            query = query.eq("business_unit", business_unit)
         response = query.execute()
-        data = response.data
-        return pd.DataFrame(data) if data else pd.DataFrame(columns=[
-            'date', 'transaction_type', 'quantity_kg', 'unit_price',
-            'total_amount', 'remarks', 'business_unit', 'created_at'
-        ])
+        if not response.data:
+            return pd.DataFrame(columns=[
+                'id', 'date', 'transaction_type', 'quantity_kg',
+                'unit_price', 'total_amount', 'remarks', 'business_unit',
+                'created_at', 'updated_at'
+            ])
+        df = pd.DataFrame(response.data)
+        # Convert numeric columns
+        numeric_cols = ['quantity_kg', 'unit_price', 'total_amount']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        # Convert date columns
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date']).dt.date
+        if 'created_at' in df.columns:
+            df['created_at'] = pd.to_datetime(df['created_at'])
+        if 'updated_at' in df.columns:
+            df['updated_at'] = pd.to_datetime(df['updated_at'])
+        return df
     except Exception as e:
-        logging.error(f"Error fetching inventory: {str(e)}")
+        st.error(f"Failed to load inventory: {str(e)}")
         return pd.DataFrame(columns=[
-            'date', 'transaction_type', 'quantity_kg', 'unit_price',
-            'total_amount', 'remarks', 'business_unit', 'created_at'
+            'id', 'date', 'transaction_type', 'quantity_kg',
+            'unit_price', 'total_amount', 'remarks', 'business_unit',
+            'created_at', 'updated_at'
         ])
 
 def fetch_expenses(unit=None):
