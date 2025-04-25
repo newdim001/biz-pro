@@ -67,6 +67,36 @@ def fetch_price_history():
         st.error(f"Failed to load price history: {str(e)}")
         return pd.DataFrame()
 
+# Calculate current stock for a specific unit
+def calculate_current_stock(unit):
+    """
+    Calculate current stock for a specific business unit.
+    Args:
+        unit: The business unit (e.g., 'Unit A', 'Unit B').
+    Returns:
+        Current stock (sum of purchases - sum of sales).
+    """
+    try:
+        # Fetch inventory data for the specified unit
+        inventory_data = fetch_inventory(unit)
+        if inventory_data.empty:
+            return 0.0  # Return zero if no data exists
+
+        # Separate purchases and sales
+        purchases = inventory_data[inventory_data['transaction_type'] == 'Purchase']
+        sales = inventory_data[inventory_data['transaction_type'] == 'Sale']
+
+        # Calculate total purchased and sold quantities
+        total_purchased = purchases['quantity_kg'].sum() if not purchases.empty else 0.0
+        total_sold = sales['quantity_kg'].sum() if not sales.empty else 0.0
+
+        # Calculate current stock
+        current_stock = total_purchased - total_sold
+        return round(current_stock, 2)
+    except Exception as e:
+        st.error(f"Error calculating current stock: {str(e)}")
+        return 0.0
+
 # Data Update Functions
 def update_market_price(new_price):
     """Update the current market price in Supabase"""
@@ -112,8 +142,7 @@ def get_system_summary():
     purchases = inventory[inventory['transaction_type'] == 'Purchase'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
     sales = inventory[inventory['transaction_type'] == 'Sale'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
     
-    total_stock = (purchases['quantity_kg'].sum() if not purchases.empty else 0.0) - \
-                  (sales['quantity_kg'].sum() if not sales.empty else 0.0)
+    total_stock = calculate_current_stock(None)  # None returns system-wide stock
     total_inventory_value = ((purchases['quantity_kg'] * purchases['unit_price']).sum() if not purchases.empty else 0.0) - \
                             ((sales['quantity_kg'] * sales['unit_price']).sum() if not sales.empty else 0.0)
     
@@ -134,8 +163,7 @@ def get_business_unit_summary(unit):
     purchases = inventory[inventory['transaction_type'] == 'Purchase'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
     sales = inventory[inventory['transaction_type'] == 'Sale'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
     
-    total_stock = (purchases['quantity_kg'].sum() if not purchases.empty else 0.0) - \
-                  (sales['quantity_kg'].sum() if not sales.empty else 0.0)
+    total_stock = calculate_current_stock(unit)
     total_inventory_value = ((purchases['quantity_kg'] * purchases['unit_price']).sum() if not purchases.empty else 0.0) - \
                             ((sales['quantity_kg'] * sales['unit_price']).sum() if not sales.empty else 0.0)
     
