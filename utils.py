@@ -68,14 +68,14 @@ def fetch_cash_balance(business_unit):
         # If doesn't exist, insert with upsert to prevent race conditions
         response = supabase.table('cash_balances').upsert({
             "business_unit": business_unit,
-            "balance": 10000.0  # Default balance
+            "balance": 10000.0,  # Default balance
+            "updated_at": datetime.now().isoformat(),  # Add timestamp
+            "created_at": datetime.now().isoformat(),  # Add timestamp
+            "last_updated": datetime.now().isoformat()  # Add timestamp
         }, on_conflict="business_unit").execute()
-        
-        return 10000.0
-        
+        return 10000.0  # Default balance
     except Exception as e:
         st.error(f"Failed to fetch balance: {str(e)}")
-        return 10000.0  # Return default on errorss_unit}: {str(e)}")
         return 10000.0  # Return default balance on failure
 
 def update_cash_balance(amount, business_unit, operation='add'):
