@@ -46,27 +46,7 @@ def initialize_default_data(business_units: list = ['Unit A', 'Unit B']) -> None
                     "business_unit": unit,
                     "balance": 0.0
                 }).execute()
-       
-def initialize_cash_balances():
-    """Initialize cash balances with proper error handling"""
-    cash_balance = {}
-    for unit in ["Unit A", "Unit B"]:
-        try:
-            # Use upsert to ensure record exists
-            response = supabase.table('cash_balances').upsert({
-                "business_unit": unit,
-                "balance": 10000.0,
-                "updated_at": datetime.now().isoformat()
-            }, on_conflict="business_unit").execute()
-            
-            if response.data:
-                cash_balance[unit] = float(response.data[0].get("balance", 10000.0))
-            else:
-                cash_balance[unit] = 10000.0
-        except Exception as e:
-            st.error(f"Failed to initialize balance for {unit}: {str(e)}")
-            cash_balance[unit] = 10000.0
-    return cash_balance 
+        
         # Initialize default partners if none exist
         partners_response = supabase.table("partnerships").select("*").execute()
         if not partners_response.data:
