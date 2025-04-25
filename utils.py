@@ -113,40 +113,6 @@ def update_cash_balance(amount, business_unit, operation='add'):
     except Exception as e:
         st.error(f"Balance update failed: {str(e)}")
         return False
-def process_purchase_transaction(business_unit, amount, item_details):
-    """
-    Atomic purchase transaction handling
-    """
-    try:
-        # Start transaction
-        supabase.rpc('begin')
-        
-        # 1. Update cash balance
-        if not update_cash_balance(amount, business_unit, 'subtract'):
-            raise ValueError("Cash balance update failed")
-        
-        # 2. Record inventory
-        inventory_response = supabase.table("inventory").insert({
-            "date": datetime.now().isoformat(),
-            "transaction_type": "Purchase",
-            "business_unit": business_unit,
-            "quantity_kg": item_details['quantity'],
-            "unit_price": item_details['price'],
-            "total_amount": amount,
-            "remarks": item_details['supplier']
-        }).execute()
-        
-        if not inventory_response.data:
-            raise ValueError("Inventory record failed")
-        
-        # Commit transaction
-        supabase.rpc('commit')
-        return True
-        
-    except Exception as e:
-        supabase.rpc('rollback')
-        st.error(f"Purchase failed: {str(e)}")
-        return False
 
 def fetch_price_history():
     """Fetch price history from Supabase."""
