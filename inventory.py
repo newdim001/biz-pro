@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date, datetime
 from supabase import create_client
-from utils import fetch_cash_balance, update_cash_balance, calculate_inventory_value
+from utils import fetch_cash_balance, update_cash_balance, calculate_inventory_value, process_purchase_transaction
 
 # Initialize Supabase client
 SUPABASE_URL = "https://umtgkoogrtvyqcrzygoe.supabase.co"
