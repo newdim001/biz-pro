@@ -18,9 +18,9 @@ def initialize_cash_balances():
         for unit in business_units:
             # Check if balance exists
             response = supabase.table("cash_balances")\
-                             .select("*")\
-                             .eq("business_unit", unit)\
-                             .execute()
+                           .select("*")\
+                           .eq("business_unit", unit)\
+                           .execute()
             
             if not response.data:
                 # Insert initial balance
@@ -36,9 +36,9 @@ def fetch_cash_balance(business_unit: str) -> float:
     """Get current cash balance for a business unit"""
     try:
         response = supabase.table("cash_balances")\
-                         .select("balance")\
-                         .eq("business_unit", business_unit)\
-                         .execute()
+                       .select("balance")\
+                       .eq("business_unit", business_unit)\
+                       .execute()
         
         if response.data:
             return float(response.data[0]["balance"])
@@ -67,77 +67,103 @@ def update_cash_balance(amount: float, business_unit: str, action: str) -> bool:
             "last_updated": date.today().isoformat()
         }, on_conflict="business_unit").execute()
         
-        return True if response else False
+        return True if response.data else False
     except Exception as e:
         st.error(f"Failed to update balance: {str(e)}")
         return False
 
 def fetch_investments() -> pd.DataFrame:
-    """Fetch all investments from Supabase"""
+    """Fetch all investments from Supabase with error handling"""
     try:
         response = supabase.table("investments").select("*").execute()
+        
         if not response.data:
-            return pd.DataFrame(columns=["business_unit", "inv_date", "amount", "investor", "description"])
-        return pd.DataFrame(response.data)
+            return pd.DataFrame(columns=[
+                "id", "business_unit", "inv_date", "amount", 
+                "investor", "description", "created_at"
+            ])
+        
+        df = pd.DataFrame(response.data)
+        
+        # Ensure required columns exist
+        required_cols = ["business_unit", "inv_date", "amount", "investor"]
+        for col in required_cols:
+            if col not in df.columns:
+                df[col] = None if col != "amount" else 0.0
+        
+        return df
+    
     except Exception as e:
-        st.error(f"Error fetching investments: {str(e)}")
-        return pd.DataFrame(columns=["business_unit", "inv_date", "amount", "investor", "description"])
+        st.error(f"Failed to load investments: {str(e)}")
+        return pd.DataFrame(columns=[
+            "id", "business_unit", "inv_date", "amount", 
+            "investor", "description", "created_at"
+        ])
 
 def add_investment(unit: str, inv_date: date, amount: float, investor: str, description: str) -> bool:
     """Add a new investment to Supabase and update the cash balance"""
     try:
-        # Update the cash balance for the business unit
-        cash_updated = update_cash_balance(amount, unit, 'add')
-        if not cash_updated:
-            st.error(f"Failed to update cash balance for {unit}. Investment not recorded.")
+        # First update the cash balance
+        if not update_cash_balance(amount, unit, 'add'):
             return False
         
-        # Add the investment record to the database
-        response = supabase.table("investments").insert({
+        # Then add the investment record
+        investment_data = {
             "business_unit": unit,
             "inv_date": inv_date.isoformat(),
-            "amount": amount,
+            "amount": float(amount),
             "investor": investor,
-            "description": description
-        }).execute()
-        return True if response else False
+            "description": description or f"Investment from {investor}"
+        }
+        
+        response = supabase.table("investments").insert(investment_data).execute()
+        return bool(response.data)
+    
     except Exception as e:
-        st.error(f"Error adding investment: {str(e)}")
+        st.error(f"Failed to add investment: {str(e)}")
+        # Attempt to rollback cash balance update
+        update_cash_balance(amount, unit, 'subtract')
         return False
 
 def show_investments():
     """Complete investment management interface"""
-    user = st.session_state.get('user')
-    if not user or not has_permission(user, 'investments'):
+    # Authentication check
+    if 'user' not in st.session_state:
+        st.error("Please log in")
+        return
+    
+    user = st.session_state['user']
+    if not has_permission(user, 'investments'):
         st.error("Permission denied")
         return
     
-    # Initialize cash balances table
+    # Initialize data
     initialize_cash_balances()
+    investments_df = fetch_investments()
     
-    # Fetch existing investments from Supabase
-    investments_data = fetch_investments()
+    if investments_df.empty:
+        st.session_state.investments = pd.DataFrame(columns=[
+            "business_unit", "inv_date", "amount", "investor", "description"
+        ])
+    else:
+        st.session_state.investments = investments_df
     
-    # Ensure 'business_unit' column exists
-    if 'business_unit' not in investments_data.columns:
-        st.error("Critical error: 'business_unit' column is missing from the investments table.")
-        return
+    st.title("💼 Investment Management")
     
-    st.session_state.investments = investments_data
-    
-    st.header("💼 Investment Management")
-    
+    # Determine which units to show based on user permissions
     units = []
     if user['business_unit'] in ['All', 'Unit A']:
         units.append('Unit A')
     if user['business_unit'] in ['All', 'Unit B']:
         units.append('Unit B')
     
+    # Create tabs for each business unit
     tabs = st.tabs(units)
     
     for i, unit in enumerate(units):
         with tabs[i]:
-            with st.form(f"invest_form_{unit}", clear_on_submit=True):
+            # New investment form
+            with st.form(f"new_investment_{unit}", clear_on_submit=True):
                 st.subheader(f"New Investment - {unit}")
                 
                 cols = st.columns(2)
@@ -154,65 +180,77 @@ def show_investments():
                     investor = st.text_input("Investor*", placeholder="Name/Company")
                     desc = st.text_input("Description", placeholder="Purpose")
                 
-                if st.form_submit_button("Record Investment"):
+                submitted = st.form_submit_button("Record Investment")
+                if submitted:
                     if not investor:
-                        st.error("Investor name required")
+                        st.error("Investor name is required")
                     elif amount <= 0:
-                        st.error("Investment amount must be greater than zero")
+                        st.error("Amount must be positive")
                     else:
-                        # Add new investment to Supabase
-                        success = add_investment(
-                            unit=unit,
-                            inv_date=inv_date,
-                            amount=amount,
-                            investor=investor,
-                            description=desc or f"Investment from {investor}"
-                        )
-                        if success:
-                            st.success(f"✅ AED {amount:,.2f} invested in {unit}")
+                        if add_investment(unit, inv_date, amount, investor, desc):
+                            st.success("Investment recorded successfully!")
                             st.rerun()
                         else:
                             st.error("Failed to record investment")
             
-            st.subheader(f"📋 {unit} Investment History")
+            # Investment history
+            st.subheader(f"Investment History - {unit}")
+            
             if 'investments' in st.session_state:
-                unit_inv = st.session_state.investments[
+                unit_investments = st.session_state.investments[
                     st.session_state.investments['business_unit'] == unit
-                ]
+                ].copy()
                 
-                # Filter to display only the required columns
-                unit_inv = unit_inv[["business_unit", "inv_date", "amount", "investor", "description"]]
-                
-                if not unit_inv.empty:
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.dataframe(
-                            unit_inv.sort_values('inv_date', ascending=False).style.format({
-                                'amount': 'AED {:,.2f}',
-                                'inv_date': lambda x: pd.to_datetime(x).strftime('%Y-%m-%d')
-                            }),
-                            height=300,
-                            use_container_width=True
-                        )
-                    with col2:
-                        total = unit_inv['amount'].sum()
-                        last = unit_inv.iloc[-1]
-                        st.metric("Total Invested", f"AED {total:,.2f}")
-                        st.metric("Last Investment", 
-                                 f"AED {last['amount']:,.2f}", 
-                                 last['investor'])
+                if not unit_investments.empty:
+                    # Convert date strings to datetime objects for sorting
+                    unit_investments['inv_date'] = pd.to_datetime(unit_investments['inv_date'])
                     
-                    csv = unit_inv.to_csv(index=False)
+                    # Display metrics
+                    col1, col2 = st.columns([1, 1])
+                    with col1:
+                        total_invested = unit_investments['amount'].sum()
+                        st.metric("Total Invested", f"AED {total_invested:,.2f}")
+                    with col2:
+                        last_investment = unit_investments.iloc[-1]
+                        st.metric(
+                            "Last Investment",
+                            f"AED {last_investment['amount']:,.2f}",
+                            last_investment['investor']
+                        )
+                    
+                    # Display dataframe
+                    st.dataframe(
+                        unit_investments.sort_values('inv_date', ascending=False)[
+                            ['inv_date', 'amount', 'investor', 'description']
+                        ].rename(columns={
+                            'inv_date': 'Date',
+                            'amount': 'Amount (AED)',
+                            'investor': 'Investor',
+                            'description': 'Description'
+                        }),
+                        column_config={
+                            "Date": st.column_config.DateColumn("Date", format="YYYY-MM-DD"),
+                            "Amount (AED)": st.column_config.NumberColumn(
+                                "Amount (AED)",
+                                format="AED %.2f"
+                            )
+                        },
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    
+                    # Export button
+                    csv = unit_investments.to_csv(index=False)
                     st.download_button(
-                        "📥 Export CSV",
+                        "📥 Export as CSV",
                         data=csv,
                         file_name=f"{unit}_investments.csv",
                         mime="text/csv"
                     )
                 else:
-                    st.info("No investments recorded")
+                    st.info(f"No investments found for {unit}")
             else:
-                st.info("No investments recorded")
+                st.info("No investment data available")
 
 if __name__ == "__main__":
     show_investments()
