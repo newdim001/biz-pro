@@ -114,7 +114,7 @@ def update_cash_balance(amount, business_unit, operation='add'):
         response = supabase.table('cash_balances')\
                    .update({
                        "balance": new_balance,
-                       "updated_at": datetime.now().isoformat()
+                       "last_updated": datetime.now().isoformat()
                    })\
                    .eq("business_unit", business_unit)\
                    .execute()
