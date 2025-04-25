@@ -7,12 +7,12 @@ from utils import (
     fetch_inventory, refresh_inventory_data, add_inventory_record
 )
 
-# Initialize Supabase client
+# Centralized Supabase Initialization
 SUPABASE_URL = "https://umtgkoogrtvyqcrzygoe.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtdGdrb29ncnR2eXFjcnp5Z29lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxMzYyNDYsImV4cCI6MjA2MDcxMjI0Nn0.QMrKSOa91fzE7sNWBfhePhRFG05YMwNbvHYK8Fzkjpk"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Authentication and permissions
+# Authentication and Permissions
 def has_permission(user, feature):
     """Check if user has permission for a feature."""
     permissions = {
