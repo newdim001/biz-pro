@@ -53,7 +53,7 @@ def initialize_default_data():
 
 def fetch_cash_balance(business_unit):
     """
-    Safely fetch cash balance without creating duplicates
+    Safely fetch cash balance without creating duplicates.
     """
     try:
         # Try to fetch existing balance
@@ -61,19 +61,14 @@ def fetch_cash_balance(business_unit):
                    .select("balance")\
                    .eq("business_unit", business_unit)\
                    .execute()
-        
         if response.data:
             return float(response.data[0]["balance"])
-        
         # If doesn't exist, insert with upsert to prevent race conditions
         response = supabase.table('cash_balances').upsert({
             "business_unit": business_unit,
-            "balance": 10000.0,  # Default balance
-            "updated_at": datetime.now().isoformat(),  # Add timestamp
-            "created_at": datetime.now().isoformat(),  # Add timestamp
-            "last_updated": datetime.now().isoformat()  # Add timestamp
+            "balance": 10000.0  # Default balance
         }, on_conflict="business_unit").execute()
-        return 10000.0  # Default balance
+        return 10000.0
     except Exception as e:
         st.error(f"Failed to fetch balance: {str(e)}")
         return 10000.0  # Return default balance on failure
