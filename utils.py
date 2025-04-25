@@ -53,10 +53,10 @@ def initialize_default_data():
 
 def fetch_cash_balance(business_unit):
     """
-   Safely fetch cash balance, handling missing records without violating constraints
+    Safely fetch cash balance without creating duplicates
     """
     try:
-        # First try to get existing balance
+        # Try to fetch existing balance
         response = supabase.table('cash_balances')\
                    .select("balance")\
                    .eq("business_unit", business_unit)\
@@ -65,36 +65,22 @@ def fetch_cash_balance(business_unit):
         if response.data:
             return float(response.data[0]["balance"])
         
-        # If no record exists, carefully insert a new one
-        try:
-            response = supabase.table('cash_balances').insert({
-                "business_unit": business_unit,
-                "balance": 10000.0  # Default balance
-            }).execute()
-            
-            if response.data:
-                return 10000.0
-            else:
-                raise ValueError("Failed to create new balance record")
-                
-        except Exception as insert_error:
-            # If insert fails (likely due to race condition), try to fetch again
-            response = supabase.table('cash_balances')\
-                       .select("balance")\
-                       .eq("business_unit", business_unit)\
-                       .execute()
-            
-            if response.data:
-                return float(response.data[0]["balance"])
-            raise insert_error
-            
+        # If doesn't exist, insert with upsert to prevent race conditions
+        response = supabase.table('cash_balances').upsert({
+            "business_unit": business_unit,
+            "balance": 10000.0  # Default balance
+        }, on_conflict="business_unit").execute()
+        
+        return 10000.0
+        
     except Exception as e:
-        logging.error(f"Failed to fetch balance for {business_unit}: {str(e)}")
+        st.error(f"Failed to fetch balance: {str(e)}")
+        return 10000.0  # Return default on errorss_unit}: {str(e)}")
         return 10000.0  # Return default balance on failure
 
 def update_cash_balance(amount, business_unit, operation='add'):
     """
-    Safely update cash balance using proper upsert pattern
+    Atomic cash balance update with proper conflict handling
     """
     try:
         amount = float(amount)
@@ -105,29 +91,62 @@ def update_cash_balance(amount, business_unit, operation='add'):
         current_balance = fetch_cash_balance(business_unit)
         
         # Calculate new balance
-        if operation == 'subtract':
-            if current_balance < amount:
-                raise ValueError(f"Insufficient funds in {business_unit}")
-            new_balance = current_balance - amount
-        else:
-            new_balance = current_balance + amount
+        new_balance = current_balance + (amount if operation == 'add' else -amount)
         
-        # Use upsert with explicit on_conflict handling
+        # Check for sufficient funds if subtracting
+        if operation == 'subtract' and new_balance < 0:
+            raise ValueError(f"Insufficient funds in {business_unit}")
+        
+        # Atomic update with upsert
         response = supabase.table('cash_balances').upsert({
             "business_unit": business_unit,
             "balance": new_balance
         }, on_conflict="business_unit").execute()
         
         if not response.data:
-            raise ValueError("Balance update failed - no data returned")
+            raise ValueError("Balance update failed")
         
         # Update session state
         st.session_state.cash_balance[business_unit] = new_balance
         return True
         
     except Exception as e:
-        logging.error(f"Error updating cash balance: {str(e)}")
-        raise ValueError(f"Balance update failed: {str(e)}")
+        st.error(f"Balance update failed: {str(e)}")
+        return False
+def process_purchase_transaction(business_unit, amount, item_details):
+    """
+    Atomic purchase transaction handling
+    """
+    try:
+        # Start transaction
+        supabase.rpc('begin')
+        
+        # 1. Update cash balance
+        if not update_cash_balance(amount, business_unit, 'subtract'):
+            raise ValueError("Cash balance update failed")
+        
+        # 2. Record inventory
+        inventory_response = supabase.table("inventory").insert({
+            "date": datetime.now().isoformat(),
+            "transaction_type": "Purchase",
+            "business_unit": business_unit,
+            "quantity_kg": item_details['quantity'],
+            "unit_price": item_details['price'],
+            "total_amount": amount,
+            "remarks": item_details['supplier']
+        }).execute()
+        
+        if not inventory_response.data:
+            raise ValueError("Inventory record failed")
+        
+        # Commit transaction
+        supabase.rpc('commit')
+        return True
+        
+    except Exception as e:
+        supabase.rpc('rollback')
+        st.error(f"Purchase failed: {str(e)}")
+        return False
 
 def fetch_price_history():
     """Fetch price history from Supabase."""
