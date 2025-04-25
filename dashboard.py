@@ -3,6 +3,13 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 from supabase import create_client
+from utils import (
+    init_supabase, fetch_inventory, fetch_expenses,
+    fetch_cash_balances, fetch_latest_market_price,
+    fetch_price_history, update_market_price,
+    calculate_current_stock, calculate_inventory_value,
+    calculate_profit_loss
+)
 from components.auth import has_permission
 
 # Initialize Supabase client
