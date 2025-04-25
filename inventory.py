@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date, datetime
 from supabase import create_client
-from utils import fetch_cash_balance, update_cash_balance, calculate_inventory_value, process_purchase_transaction
+from utils import fetch_cash_balance, update_cash_balance, calculate_inventory_value
 
 # Initialize Supabase client
 SUPABASE_URL = "https://umtgkoogrtvyqcrzygoe.supabase.co"
@@ -71,7 +71,7 @@ def refresh_inventory_data(business_unit=None):
         st.error(f"Refresh failed: {str(e)}")
 
 def show_transaction_form(transaction_type: str, business_unit: str):
-    """Show form for purchase/sale transactions."""
+    """Show form for purchase/sale transactions with proper balance handling."""
     with st.form(f"{transaction_type}_form_{business_unit}", clear_on_submit=True):
         st.subheader(f"New {transaction_type} - {business_unit}")
         
@@ -105,26 +105,37 @@ def show_transaction_form(transaction_type: str, business_unit: str):
                     st.error("Quantity and price must be positive values")
                     return
                 
-                # Handle cash balance
-                if transaction_type == "Purchase":
-                    if not update_cash_balance(total_amount, business_unit, 'subtract'):
-                        st.error(f"Insufficient funds in {business_unit}")
-                        return
-                elif transaction_type == "Sale":
-                    update_cash_balance(total_amount, business_unit, 'add')
-                
-                # Record transaction
-                if add_inventory_record(
+                # Record inventory transaction first
+                inventory_success = add_inventory_record(
                     transaction_type=transaction_type,
                     business_unit=business_unit,
                     date_transaction=date_transaction,
                     quantity_kg=quantity_kg,
                     unit_price=unit_price,
                     remarks=remarks
-                ):
-                    st.success(f"{transaction_type} recorded successfully!")
-                    refresh_inventory_data(business_unit)
-                    st.rerun()
+                )
+                
+                if not inventory_success:
+                    raise ValueError("Failed to record inventory transaction")
+                
+                # Handle cash balance AFTER successful inventory record
+                if transaction_type == "Purchase":
+                    if not update_cash_balance(total_amount, business_unit, 'subtract'):
+                        # Rollback inventory if balance update fails
+                        supabase.table("inventory")\
+                            .delete()\
+                            .eq("date", date_transaction.isoformat())\
+                            .eq("business_unit", business_unit)\
+                            .eq("remarks", remarks)\
+                            .execute()
+                        st.error(f"Insufficient funds in {business_unit}")
+                        return
+                elif transaction_type == "Sale":
+                    update_cash_balance(total_amount, business_unit, 'add')
+                
+                st.success(f"{transaction_type} recorded successfully!")
+                refresh_inventory_data(business_unit)
+                st.rerun()
                     
             except Exception as e:
                 st.error(f"Transaction failed: {str(e)}")
