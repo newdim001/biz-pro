@@ -123,10 +123,27 @@ def fetch_price_history():
         }])
 
 
-def fetch_inventory():
-    """Fetch inventory data from Supabase."""
+def fetch_latest_market_price():
+    """Fetch the latest market price from price history."""
     try:
-        response = supabase.table('inventory').select('*').execute()
+        price_history = fetch_price_history()
+        if not price_history.empty:
+            latest_price = price_history.iloc[-1]['Price']
+            latest_date = price_history.iloc[-1]['Date']
+            return float(latest_price), latest_date
+        return 50.0, date.today()  # Default price if no history exists
+    except Exception as e:
+        logging.error(f"Error fetching latest market price: {str(e)}")
+        return 50.0, date.today()
+
+
+def fetch_inventory(unit=None):
+    """Fetch inventory data from Supabase for a specific unit or all units."""
+    try:
+        query = supabase.table('inventory').select('*')
+        if unit:
+            query = query.eq('business_unit', unit)
+        response = query.execute()
         data = response.data
         return pd.DataFrame(data) if data else pd.DataFrame(columns=[
             'date', 'transaction_type', 'quantity_kg', 'unit_price',
@@ -140,10 +157,13 @@ def fetch_inventory():
         ])
 
 
-def fetch_expenses():
-    """Fetch expenses data from Supabase."""
+def fetch_expenses(unit=None):
+    """Fetch expenses data from Supabase for a specific unit or all units."""
     try:
-        response = supabase.table('expenses').select('*').execute()
+        query = supabase.table('expenses').select('*')
+        if unit:
+            query = query.eq('Business Unit', unit)
+        response = query.execute()
         data = response.data
         return pd.DataFrame(data) if data else pd.DataFrame(columns=[
             'Date', 'Category', 'Amount', 'Description',
@@ -157,10 +177,13 @@ def fetch_expenses():
         ])
 
 
-def fetch_investments():
-    """Fetch investments data from Supabase."""
+def fetch_investments(unit=None):
+    """Fetch investments data from Supabase for a specific unit or all units."""
     try:
-        response = supabase.table('investments').select('*').execute()
+        query = supabase.table('investments').select('*')
+        if unit:
+            query = query.eq('Business Unit', unit)
+        response = query.execute()
         data = response.data
         return pd.DataFrame(data) if data else pd.DataFrame(columns=[
             'Date', 'Business Unit', 'Amount', 'Investor', 'Description'
@@ -172,47 +195,61 @@ def fetch_investments():
         ])
 
 
-def fetch_partners():
-    """Fetch partners data from Supabase."""
+def fetch_partners(unit=None):
+    """Fetch partners data from Supabase for a specific unit or all units."""
     try:
-        response = supabase.table('partners').select('*').execute()
+        query = supabase.table('partners').select('*')
+        if unit:
+            query = query.eq('unit', unit)
+        response = query.execute()
         data = response.data
         if not data:
-            return {
+            # Return default partner structure if no data exists
+            default_partners = {
                 'Unit A': pd.DataFrame([
-                    {'Partner': 'Ahmed', 'Share': 60.0, 'Withdrawn': 0.0, 'Invested': 0.0},
-                    {'Partner': 'Fatima', 'Share': 40.0, 'Withdrawn': 0.0, 'Invested': 0.0}
+                    {'Partner': 'Ahmed', 'Share': 60.0, 'Withdrawn': 0.0, 'Invested': 0.0, 'unit': 'Unit A'},
+                    {'Partner': 'Fatima', 'Share': 40.0, 'Withdrawn': 0.0, 'Invested': 0.0, 'unit': 'Unit A'}
                 ]),
                 'Unit B': pd.DataFrame([
-                    {'Partner': 'Ali', 'Share': 50.0, 'Withdrawn': 0.0, 'Invested': 0.0},
-                    {'Partner': 'Mariam', 'Share': 50.0, 'Withdrawn': 0.0, 'Invested': 0.0}
+                    {'Partner': 'Ali', 'Share': 50.0, 'Withdrawn': 0.0, 'Invested': 0.0, 'unit': 'Unit B'},
+                    {'Partner': 'Mariam', 'Share': 50.0, 'Withdrawn': 0.0, 'Invested': 0.0, 'unit': 'Unit B'}
                 ])
             }
-        grouped = {}
-        for item in data:
-            unit = item['unit']
-            if unit not in grouped:
-                grouped[unit] = []
-            grouped[unit].append(item)
-        return {unit: pd.DataFrame(grouped[unit]) for unit in grouped}
+            return default_partners.get(unit, pd.DataFrame()) if unit else default_partners
+        
+        if unit:
+            return pd.DataFrame(data)
+        else:
+            # Group by unit if no specific unit requested
+            grouped = {}
+            for item in data:
+                unit_name = item['unit']
+                if unit_name not in grouped:
+                    grouped[unit_name] = []
+                grouped[unit_name].append(item)
+            return {unit: pd.DataFrame(grouped[unit]) for unit in grouped}
     except Exception as e:
         logging.error(f"Error fetching partners: {str(e)}")
-        return {
+        default_partners = {
             'Unit A': pd.DataFrame([
-                {'Partner': 'Ahmed', 'Share': 60.0, 'Withdrawn': 0.0, 'Invested': 0.0},
-                {'Partner': 'Fatima', 'Share': 40.0, 'Withdrawn': 0.0, 'Invested': 0.0}
+                {'Partner': 'Ahmed', 'Share': 60.0, 'Withdrawn': 0.0, 'Invested': 0.0, 'unit': 'Unit A'},
+                {'Partner': 'Fatima', 'Share': 40.0, 'Withdrawn': 0.0, 'Invested': 0.0, 'unit': 'Unit A'}
             ]),
             'Unit B': pd.DataFrame([
-                {'Partner': 'Ali', 'Share': 50.0, 'Withdrawn': 0.0, 'Invested': 0.0},
-                {'Partner': 'Mariam', 'Share': 50.0, 'Withdrawn': 0.0, 'Invested': 0.0}
+                {'Partner': 'Ali', 'Share': 50.0, 'Withdrawn': 0.0, 'Invested': 0.0, 'unit': 'Unit B'},
+                {'Partner': 'Mariam', 'Share': 50.0, 'Withdrawn': 0.0, 'Invested': 0.0, 'unit': 'Unit B'}
             ])
         }
+        return default_partners.get(unit, pd.DataFrame()) if unit else default_partners
 
 
-def fetch_transactions():
-    """Fetch transactions data from Supabase."""
+def fetch_transactions(unit=None):
+    """Fetch transactions data from Supabase for a specific unit or all units."""
     try:
-        response = supabase.table('transactions').select('*').execute()
+        query = supabase.table('transactions').select('*')
+        if unit:
+            query = query.or_(f"From.eq.{unit},To.eq.{unit}")
+        response = query.execute()
         data = response.data
         return pd.DataFrame(data) if data else pd.DataFrame(columns=[
             'Date', 'Type', 'Amount', 'From', 'To', 'Description'
@@ -243,120 +280,155 @@ def update_market_price(new_price):
         raise ValueError(f"Error updating market price: {str(e)}")
 
 
-# Calculate current stock for a specific unit
-def calculate_current_stock(unit):
+def calculate_current_stock(unit=None):
     """
-    Calculate current stock for a specific business unit.
+    Calculate current stock for a specific business unit or all units.
     Args:
-        unit: The business unit (e.g., 'Unit A', 'Unit B').
+        unit: The business unit (e.g., 'Unit A', 'Unit B'). None for all units.
     Returns:
         Current stock (sum of purchases - sum of sales).
     """
     try:
-        # Fetch inventory data for the specified unit
         inventory_data = fetch_inventory(unit)
         if inventory_data.empty:
-            return 0.0  # Return zero if no data exists
+            return 0.0
 
-        # Separate purchases and sales
         purchases = inventory_data[inventory_data['transaction_type'] == 'Purchase']
         sales = inventory_data[inventory_data['transaction_type'] == 'Sale']
 
-        # Calculate total purchased and sold quantities
         total_purchased = purchases['quantity_kg'].sum() if not purchases.empty else 0.0
         total_sold = sales['quantity_kg'].sum() if not sales.empty else 0.0
 
-        # Calculate current stock
-        current_stock = total_purchased - total_sold
-        return round(current_stock, 2)
+        return round(total_purchased - total_sold, 2)
     except Exception as e:
-        st.error(f"Error calculating current stock: {str(e)}")
+        logging.error(f"Error calculating current stock: {str(e)}")
         return 0.0
+
+
+def calculate_inventory_value(unit=None):
+    """
+    Calculate inventory value for a specific unit or all units.
+    Args:
+        unit: The business unit (e.g., 'Unit A', 'Unit B'). None for all units.
+    Returns:
+        tuple: (current_stock, current_value)
+    """
+    try:
+        inventory_data = fetch_inventory(unit)
+        if inventory_data.empty:
+            return 0.0, 0.0
+
+        current_stock = calculate_current_stock(unit)
         
-def calculate_inventory_value(unit):
-    """Calculate current stock quantity and value."""
-    inventory = st.session_state.inventory[
-        st.session_state.inventory['business_unit'] == unit
-    ]
-    
-    # Separate purchases and sales
-    purchases = inventory[inventory['transaction_type'] == 'Purchase'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
-    sales = inventory[inventory['transaction_type'] == 'Sale'] if not inventory.empty else pd.DataFrame(columns=inventory.columns)
-    
-    # Calculate net stock (purchases - sales)
-    total_stock = (purchases['quantity_kg'].sum() if not purchases.empty else 0.0) - \
-                  (sales['quantity_kg'].sum() if not sales.empty else 0.0)
-    
-    # Calculate weighted average purchase price
-    if not purchases.empty:
-        total_purchase_amount = purchases['total_amount'].sum()
-        total_purchase_quantity = purchases['quantity_kg'].sum()
-        avg_purchase_price = total_purchase_amount / total_purchase_quantity
-    else:
-        avg_purchase_price = st.session_state.current_price  # Fallback to current price if no purchases
-    
-    # Calculate current value based on weighted average purchase price
-    current_value = total_stock * avg_purchase_price
-    
-    return round(float(total_stock), 2), round(float(current_value), 2)
+        purchases = inventory_data[inventory_data['transaction_type'] == 'Purchase']
+        if not purchases.empty:
+            total_purchase_amount = purchases['total_amount'].sum()
+            total_purchase_quantity = purchases['quantity_kg'].sum()
+            avg_purchase_price = total_purchase_amount / total_purchase_quantity
+        else:
+            avg_purchase_price = fetch_latest_market_price()[0]
+
+        current_value = current_stock * avg_purchase_price
+        return round(current_stock, 2), round(current_value, 2)
+    except Exception as e:
+        logging.error(f"Error calculating inventory value: {str(e)}")
+        return 0.0, 0.0
 
 
-def calculate_operating_expenses(unit):
-    """Calculate total operating expenses (excluding partner transactions)."""
-    expenses = st.session_state.expenses[
-        (st.session_state.expenses['Business Unit'] == unit) &
-        (~st.session_state.expenses['Category'].isin([
-            'Partner Withdrawal',
-            'Partner Contribution'
-        ]))
-    ]
-    return round(float(expenses['Amount'].sum()), 2)
+def calculate_operating_expenses(unit=None):
+    """
+    Calculate total operating expenses (excluding partner transactions).
+    Args:
+        unit: The business unit (e.g., 'Unit A', 'Unit B'). None for all units.
+    Returns:
+        float: Total operating expenses
+    """
+    try:
+        expenses_data = fetch_expenses(unit)
+        if expenses_data.empty:
+            return 0.0
+
+        operating_expenses = expenses_data[
+            (~expenses_data['Category'].isin([
+                'Partner Withdrawal',
+                'Partner Contribution'
+            ]))
+        ]
+        return round(float(operating_expenses['Amount'].sum()), 2)
+    except Exception as e:
+        logging.error(f"Error calculating operating expenses: {str(e)}")
+        return 0.0
 
 
-def calculate_profit_loss(unit):
-    """Calculate actual profit from sales."""
-    sales = st.session_state.inventory[
-        (st.session_state.inventory['business_unit'] == unit) &
-        (st.session_state.inventory['transaction_type'] == 'Sale')
-    ]
-    purchases = st.session_state.inventory[
-        (st.session_state.inventory['business_unit'] == unit) &
-        (st.session_state.inventory['transaction_type'] == 'Purchase')
-    ]
-    
-    # Calculate gross profit (sales revenue - cost of goods sold)
-    gross_profit = (sales['total_amount'].sum() if not sales.empty else 0.0) - \
-                   (purchases['total_amount'].sum() if not purchases.empty else 0.0)
-    
-    # Calculate net profit (gross profit - operating expenses)
-    net_profit = gross_profit - calculate_operating_expenses(unit)
-    
-    return round(gross_profit, 2), round(net_profit, 2)
+def calculate_profit_loss(unit=None):
+    """
+    Calculate profit/loss for a business unit or all units.
+    Args:
+        unit: The business unit (e.g., 'Unit A', 'Unit B'). None for all units.
+    Returns:
+        tuple: (gross_profit, net_profit)
+    """
+    try:
+        inventory_data = fetch_inventory(unit)
+        if inventory_data.empty:
+            return 0.0, 0.0
+
+        sales = inventory_data[inventory_data['transaction_type'] == 'Sale']
+        purchases = inventory_data[inventory_data['transaction_type'] == 'Purchase']
+
+        gross_profit = (sales['total_amount'].sum() if not sales.empty else 0.0) - \
+                      (purchases['total_amount'].sum() if not purchases.empty else 0.0)
+
+        operating_expenses = calculate_operating_expenses(unit)
+        net_profit = gross_profit - operating_expenses
+
+        return round(gross_profit, 2), round(net_profit, 2)
+    except Exception as e:
+        logging.error(f"Error calculating profit/loss: {str(e)}")
+        return 0.0, 0.0
 
 
-def calculate_provisional_profit(unit):
+def calculate_provisional_profit(unit=None):
     """
     Calculate potential profit from current inventory.
     Provisional Profit = Inventory Value - Operating Expenses
+    Args:
+        unit: The business unit (e.g., 'Unit A', 'Unit B'). None for all units.
+    Returns:
+        float: Provisional profit
     """
-    current_stock, inventory_value = calculate_inventory_value(unit)
-    operating_expenses = calculate_operating_expenses(unit)
-    provisional_profit = inventory_value - operating_expenses
-    return round(max(0.0, provisional_profit), 2)
+    try:
+        _, inventory_value = calculate_inventory_value(unit)
+        operating_expenses = calculate_operating_expenses(unit)
+        provisional_profit = inventory_value - operating_expenses
+        return round(max(0.0, provisional_profit), 2)
+    except Exception as e:
+        logging.error(f"Error calculating provisional profit: {str(e)}")
+        return 0.0
 
 
 def calculate_partner_profits(unit):
-    """Calculate profit distribution for partners with validation."""
-    partners_df = st.session_state.partners[unit].copy()
-    provisional = calculate_provisional_profit(unit)
-    _, actual = calculate_profit_loss(unit)
-    distributable = max(float(provisional), float(actual))
-    partners_df['Total_Entitlement'] = partners_df['Share'] / 100 * distributable
-    partners_df['Available_Now'] = partners_df['Total_Entitlement'] - partners_df['Withdrawn']
-    partners_df['Available_Now'] = partners_df['Available_Now'].apply(
-        lambda x: max(0.0, float(x)) if float(x) >= 0.01 else 0.0
-    )
-    return partners_df[['Partner', 'Share', 'Total_Entitlement', 'Withdrawn', 'Available_Now']]
+    """
+    Calculate profit distribution for partners with validation.
+    Args:
+        unit: The business unit (e.g., 'Unit A', 'Unit B').
+    Returns:
+        DataFrame: Partner profit distribution details
+    """
+    try:
+        partners_df = st.session_state.partners[unit].copy()
+        provisional = calculate_provisional_profit(unit)
+        _, actual = calculate_profit_loss(unit)
+        distributable = max(float(provisional), float(actual))
+        partners_df['Total_Entitlement'] = partners_df['Share'] / 100 * distributable
+        partners_df['Available_Now'] = partners_df['Total_Entitlement'] - partners_df['Withdrawn']
+        partners_df['Available_Now'] = partners_df['Available_Now'].apply(
+            lambda x: max(0.0, float(x)) if float(x) >= 0.01 else 0.0
+        )
+        return partners_df[['Partner', 'Share', 'Total_Entitlement', 'Withdrawn', 'Available_Now']]
+    except Exception as e:
+        logging.error(f"Error calculating partner profits: {str(e)}")
+        return pd.DataFrame()
 
 
 def record_partner_withdrawal(unit, partner, amount, description):
