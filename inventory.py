@@ -45,44 +45,54 @@ def show_transaction_form(transaction_type: str, business_unit: str):
             )
             remarks = st.text_input(
                 "Supplier" if transaction_type == "Purchase" else "Customer",
-                max_chars=100
+                max_chars=100,
+                placeholder="Enter supplier/customer name"
             )
+        
         total_amount = round(quantity_kg * unit_price, 2)
         st.write(f"Total Amount: AED {total_amount:,.2f}")
+        
         if st.form_submit_button(f"Record {transaction_type}"):
             try:
                 # Validate inputs
                 if quantity_kg <= 0 or unit_price <= 0:
                     st.error("Quantity and price must be positive values")
                     return
+                
                 # Record inventory transaction first
-                inventory_success = add_inventory_record(
-                    transaction_type=transaction_type,
-                    business_unit=business_unit,
-                    date_transaction=date_transaction,
-                    quantity_kg=quantity_kg,
-                    unit_price=unit_price,
-                    remarks=remarks
-                )
-                if not inventory_success:
+                inventory_data = {
+                    "transaction_type": transaction_type,
+                    "business_unit": business_unit,
+                    "date": date_transaction.isoformat(),
+                    "quantity_kg": float(quantity_kg),
+                    "unit_price": float(unit_price),
+                    "total_amount": float(total_amount),
+                    "remarks": remarks
+                }
+                
+                # Insert into database
+                response = supabase.table("inventory").insert(inventory_data).execute()
+                
+                if not response.data:
                     raise ValueError("Failed to record inventory transaction")
+                
                 # Handle cash balance AFTER successful inventory record
                 if transaction_type == "Purchase":
                     if not update_cash_balance(total_amount, business_unit, 'subtract'):
                         # Rollback inventory if balance update fails
                         supabase.table("inventory")\
                             .delete()\
-                            .eq("date", date_transaction.isoformat())\
-                            .eq("business_unit", business_unit)\
-                            .eq("remarks", remarks)\
+                            .eq("id", response.data[0]['id'])\
                             .execute()
                         st.error(f"Insufficient funds in {business_unit}")
                         return
                 elif transaction_type == "Sale":
                     update_cash_balance(total_amount, business_unit, 'add')
+                
                 st.success(f"{transaction_type} recorded successfully!")
                 refresh_inventory_data(business_unit)
                 st.rerun()
+                
             except Exception as e:
                 st.error(f"Transaction failed: {str(e)}")
 
@@ -93,23 +103,30 @@ def show_inventory():
         if 'user' not in st.session_state:
             st.error("Please log in to access inventory")
             return
+        
         user = st.session_state.user
         if not has_permission(user, 'inventory'):
             st.error("You don't have permission to access this page")
             return
+        
         # Initialize data
         if 'cash_balance' not in st.session_state:
             st.session_state.cash_balance = {
                 "Unit A": fetch_cash_balance("Unit A"),
                 "Unit B": fetch_cash_balance("Unit B")
             }
+        
         if 'inventory' not in st.session_state:
             refresh_inventory_data()
+        
         st.title("📦 Inventory Management")
+        
         # Determine which units to show
-        units = ["Unit A", "Unit B"] if user['business_unit'] == 'All' else [user['business_unit']]
+        units = ["Unit A", "Unit B"] if user.get('business_unit', 'All') == 'All' else [user['business_unit']]
+        
         # Create tabs for each business unit
         unit_tabs = st.tabs(units)
+        
         for i, unit in enumerate(units):
             with unit_tabs[i]:
                 # Current stock status
@@ -117,44 +134,51 @@ def show_inventory():
                 cols = st.columns(3)
                 with cols[0]:
                     st.metric("Cash Balance", f"AED {st.session_state.cash_balance.get(unit, 0):,.2f}")
+                
                 # Calculate and display current stock
                 try:
                     stock, value = calculate_inventory_value(unit)
                     with cols[1]:
-                        st.metric("Current Stock", f"{stock:,.2f} kg")
+                        st.metric("Current Stock", f"{stock:,.3f} kg")
                     with cols[2]:
                         st.metric("Inventory Value", f"AED {value:,.2f}")
                 except Exception as e:
                     st.error(f"Calculation error: {str(e)}")
+                
                 # Refresh button
                 if st.button("🔄 Refresh Data", key=f"refresh_{unit}"):
                     refresh_inventory_data(unit)
                     st.rerun()
+                
                 # Purchase/Sale subtabs
                 tab1, tab2 = st.tabs(["📥 Purchase", "📤 Sale"])
                 with tab1:
                     show_transaction_form("Purchase", unit)
                 with tab2:
                     show_transaction_form("Sale", unit)
+                
                 # Recent transactions
                 st.subheader(f"Transaction History - {unit}")
                 inventory_data = st.session_state.inventory[
                     st.session_state.inventory['business_unit'] == unit
                 ].copy()
+                
                 if not inventory_data.empty:
                     # Format display columns
                     display_cols = ['date', 'transaction_type', 'quantity_kg', 
                                   'unit_price', 'total_amount', 'remarks']
                     inventory_data = inventory_data[display_cols]
+                    
                     # Convert to proper types
                     inventory_data['quantity_kg'] = inventory_data['quantity_kg'].astype(float)
                     inventory_data['unit_price'] = inventory_data['unit_price'].astype(float)
                     inventory_data['total_amount'] = inventory_data['total_amount'].astype(float)
+                    
                     # Display table
                     st.dataframe(
                         inventory_data.sort_values('date', ascending=False),
                         column_config={
-                            "date": "Date",
+                            "date": st.column_config.DateColumn("Date", format="YYYY-MM-DD"),
                             "transaction_type": "Type",
                             "quantity_kg": st.column_config.NumberColumn(
                                 "Quantity (kg)", 
