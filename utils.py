@@ -61,13 +61,18 @@ def fetch_cash_balance(business_unit):
                    .select("balance")\
                    .eq("business_unit", business_unit)\
                    .execute()
+        
         if response.data:
             return float(response.data[0]["balance"])
+        
         # If doesn't exist, insert with upsert to prevent race conditions
         response = supabase.table('cash_balances').upsert({
             "business_unit": business_unit,
-            "balance": 10000.0  # Default balance
+            "balance": 10000.0,  # Default balance
+            "created_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat()
         }, on_conflict="business_unit").execute()
+        
         return 10000.0
     except Exception as e:
         st.error(f"Failed to fetch balance: {str(e)}")
@@ -92,10 +97,11 @@ def update_cash_balance(amount, business_unit, operation='add'):
         if operation == 'subtract' and new_balance < 0:
             raise ValueError(f"Insufficient funds in {business_unit}")
         
-        # Atomic update with upsert
+        # Use upsert with on_conflict to properly handle existing records
         response = supabase.table('cash_balances').upsert({
             "business_unit": business_unit,
-            "balance": new_balance
+            "balance": new_balance,
+            "updated_at": datetime.now().isoformat()
         }, on_conflict="business_unit").execute()
         
         if not response.data:
