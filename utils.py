@@ -108,6 +108,8 @@ def update_cash_balance(amount, business_unit, operation='add'):
             raise ValueError("Balance update failed")
         
         # Update session state
+        if 'cash_balance' not in st.session_state:
+            st.session_state.cash_balance = {}
         st.session_state.cash_balance[business_unit] = new_balance
         return True
         
