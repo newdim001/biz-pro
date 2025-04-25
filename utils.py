@@ -243,6 +243,36 @@ def update_market_price(new_price):
         raise ValueError(f"Error updating market price: {str(e)}")
 
 
+# Calculate current stock for a specific unit
+def calculate_current_stock(unit):
+    """
+    Calculate current stock for a specific business unit.
+    Args:
+        unit: The business unit (e.g., 'Unit A', 'Unit B').
+    Returns:
+        Current stock (sum of purchases - sum of sales).
+    """
+    try:
+        # Fetch inventory data for the specified unit
+        inventory_data = fetch_inventory(unit)
+        if inventory_data.empty:
+            return 0.0  # Return zero if no data exists
+
+        # Separate purchases and sales
+        purchases = inventory_data[inventory_data['transaction_type'] == 'Purchase']
+        sales = inventory_data[inventory_data['transaction_type'] == 'Sale']
+
+        # Calculate total purchased and sold quantities
+        total_purchased = purchases['quantity_kg'].sum() if not purchases.empty else 0.0
+        total_sold = sales['quantity_kg'].sum() if not sales.empty else 0.0
+
+        # Calculate current stock
+        current_stock = total_purchased - total_sold
+        return round(current_stock, 2)
+    except Exception as e:
+        st.error(f"Error calculating current stock: {str(e)}")
+        return 0.0
+        
 def calculate_inventory_value(unit):
     """Calculate current stock quantity and value."""
     inventory = st.session_state.inventory[
